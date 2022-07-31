@@ -1,24 +1,24 @@
 
 
-enum NodKind {
+export enum NodKind {
     APP = 1,
     NAT,
 }
 
-type Nod =
+export type Nod =
     | { kind: NodKind.APP; head: NodThunk; tail: Pln }
     | { kind: NodKind.NAT; nat: bigint }
 
-enum ThunkState {
+export enum ThunkState {
     THUNK = 1,
     VAL
 }
 
-type NodThunk =
+export type NodThunk =
     | { state: ThunkState.THUNK; val: () => Nod }
     | { state: ThunkState.VAL; val: Nod }
 
-type Pln = { arity: number, nod: NodThunk }
+export type Pln = { arity: number, nod: NodThunk }
 
 function natArity(n : bigint) : number {
     if (n == 0n) {
@@ -43,7 +43,7 @@ function evalArity(nodT : NodThunk) : number {
     }
 }
 
-function nodVal(nod : NodThunk) : Pln {
+export function nodVal(nod : NodThunk) : Pln {
     return { arity: evalArity(nod), nod: nod }
 }
 
@@ -68,7 +68,7 @@ function toNat(pln : Pln) : bigint {
 }
 
 // Natural literals are just always preevaluated.
-function mkNat(nat : bigint) : NodThunk {
+export function mkNat(nat : bigint) : NodThunk {
     return { state: ThunkState.VAL, val: { kind: NodKind.NAT, nat: nat } }
 }
 
@@ -120,15 +120,10 @@ function pluneval(n : Nod, args : Pln[]) : Pln {
 // Entry point.
 //
 // (%%) :: Pln -> Pln -> Pln
-function push(head : Pln, tail : Pln) : Pln {
+export function push(head : Pln, tail : Pln) : Pln {
     if (head.arity == 1) {
         return pluneval(force(head.nod), [tail])
     } else {
         return {arity: head.arity - 1, nod: mkApp(head.nod, tail) }
     }
 }
-
-//{ arity: 4, nod: { state: 2, val: { kind: 2, nat: 1n } } }
-//{ arity: 4, nod: { state: 'VAL', val: { kind: 'NAT', nat: 1n } } }
-let result = push(nodVal(mkNat(3n)), nodVal(mkNat(0n)));
-console.log(result);
