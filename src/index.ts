@@ -1,129 +1,177 @@
-
-
-export enum NodKind {
+export enum Kind {
     APP = 1,
     NAT,
+    FUN,
+    THUNK,
 }
 
-export type Nod =
-    | { kind: NodKind.APP; head: NodThunk; tail: Pln }
-    | { kind: NodKind.NAT; nat: bigint }
+export type Nat = bigint;
 
-export enum ThunkState {
-    THUNK = 1,
-    VAL
+export type Fan =
+    | { t: Kind.APP; f:Fan; x:Fan }
+    | { t: Kind.NAT; v:Nat }
+    | { t: Kind.FUN; n:Nat; a:Nat; b:Fan; x:(f : Fan[]) => Fan }
+    | { t: Kind.THUNK; x:() => void }
+
+export function mkApp(f:Fan, x:Fan) : Fan {
+    return mkThunk(function () { return { t:Kind.APP, f:f, x:x }})
 }
 
-export type NodThunk =
-    | { state: ThunkState.THUNK; val: () => Nod }
-    | { state: ThunkState.VAL; val: Nod }
+export function mkNat(v:Nat) : Fan { return { t:Kind.NAT, v:v } }
 
-export type Pln = { arity: number, nod: NodThunk }
+export function mkThunk(val : (() => Fan)) : Fan {
+    let t : Fan = { t: Kind.THUNK, x: function () {} }
+    t.x = function () {
+        let v = val()
+        Object.assign(t, v);
+    }
+    return t;
+}
 
-function natArity(n : bigint) : number {
-    if (n == 0n) {
-        return 3; // FUN
-    } else if (n == 1n) {
-        return 4;
-    } else if (n == 2n) {
-        return 3;
-    } else {
-        return 1;
+// -----------------------------------------------------------------------
+
+function arity(val : Fan) : Nat {
+    if (val.t == Kind.THUNK) {
+        val.x();
+    }
+
+    switch (val.t) {
+        case Kind.APP:
+            return arity(val.f) - 1n;
+        case Kind.NAT:
+            switch (val.v) {
+                case 0n: return 3n;
+                case 1n: return 4n;
+                case 2n: return 3n;
+                default: return 1n;
+            }
+        case Kind.FUN:
+            return val.a;
+        case Kind.THUNK:
+            throw "Impossible: arity didn't preevaluate thunk";
     }
 }
 
-function evalArity(nodT : NodThunk) : number {
-    let nod = force(nodT);
-    if (nod.kind == NodKind.APP) {
-        return evalArity(nod.head) - 1;
-    } else if (nod.kind == NodKind.NAT) {
-        return natArity(nod.nat);
-    } else {
-        throw "Unimplemented evalArity";
+function force(val : Fan) : Fan {
+    if (val.t == Kind.THUNK) {
+        val.x();
     }
-}
 
-export function nodVal(nod : NodThunk) : Pln {
-    return { arity: evalArity(nod), nod: nod }
-}
-
-function force(t : NodThunk) : Nod {
-    if (t.state == ThunkState.VAL) {
-        return t.val;
-    } else {
-        let v = t.val();
-        Object.assign(t, { state: ThunkState.VAL, val: v });
-        return v;
+    if (val.t == Kind.APP) {
+        force(val.f);
+        force(val.x);
     }
+    return val;
 }
 
+function valNat(val : Fan) : Nat {
+    if (val.t == Kind.THUNK) {
+        val.x();
+    }
 
-function toNat(pln : Pln) : bigint {
-    let nod = force(pln.nod);
-    if (nod.kind == NodKind.NAT) {
-        return nod.nat;
+    if (val.t == Kind.NAT) {
+        return val.v;
     } else {
         return 0n;
     }
 }
 
-// Natural literals are just always preevaluated.
-export function mkNat(nat : bigint) : NodThunk {
-    return { state: ThunkState.VAL, val: { kind: NodKind.NAT, nat: nat } }
+// -----------------------------------------------------------------------
+
+/*
+
+// I need subst to build a thunk
+
+function subst(r : bigint, xs : Pln[], b : Pln) {
+    let v = force(b.nod);
+    if (v.kind == NodKind.NAT && v.nat < r) {
+        
+    }
+
+    
 }
 
-// Build a lazy APP
-function mkApp(head : NodThunk, tail : Pln) : NodThunk {
-    return { state: ThunkState.THUNK, val: () => {
-        return { kind: NodKind.APP, head: head, tail: tail } }
-           }
+// Build a LAW.
+//
+// For v1 of this, we're going to follow the super short 
+function mkLaw(name : bigint, arg : bigint, bod : Pln) : Pln {
+    if (arg == 0n) {
+        // We build a thunk for res
+
+
+        //let x = 
+    } else {
+        return {
+            state: ThunkState.VAL, val: {
+                kind: NodKind.LAW,
+                name: name,
+                args: arg,
+                bod: bod }
+        }
+    }
 }
 
-function pluneval(n : Nod, args : Pln[]) : Pln {
-    if (n.kind == NodKind.APP) {
-        return pluneval(force(n.head), [n.tail].concat(args));
-    } else if (n.kind == NodKind.NAT) {
-        if (n.nat == 0n && args.length == 3) {
+*/
+
+// -----------------------------------------------------------------------
+
+function pluneval(n : Fan, args : Fan[]) : Fan {
+    if (n.t == Kind.THUNK) {
+        n.x()
+    }
+
+    if (n.t == Kind.APP) {
+        return pluneval(n.f, [n.x].concat(args));
+    } else if (n.t == Kind.NAT) {
+        let v = n.v;
+
+        if (v == 0n && args.length == 3) {
             throw "mkLaw unimplemented";
-        } else if (n.nat == 1n && args.length == 4) {
+        } else if (v == 1n && args.length == 4) {
+            /*
             let f, a, n, x;
             [f, a, n, x] = args;
             let arity = x.arity;
             let nod = force(x.nod);
 
             if (nod.kind == NodKind.APP) {
-                return push(push(a, { arity: arity + 1, nod: nod.head }), nod.tail);
+                return push(push(a, { arity: arity + 1, nod: nod.head }),
+                            nod.tail);
             } else if (nod.kind == NodKind.NAT) {
                 return push(n, x);
             } else {
                 throw "rest of cases in wut";
-            }
-        } else if (n.nat == 2n && args.length == 3) {
+                }
+            */
+            throw "unimplemented during porting"
+        } else if (v == 2n && args.length == 3) {
             let z, p, x;
             [z, p, x] = args;
-            let n = toNat(x);
+            let n = valNat(x);
             if (n == 0n) {
                 return z;
             } else {
-                return push(p, nodVal(mkNat(n - 1n)));
+                return push(p, mkNat(n - 1n));
             }
-        } else if (n.nat == 3n && args.length == 1) {
-            return nodVal(mkNat(toNat(args[0]) + 1n));
+        } else if (v == 3n && args.length == 1) {
+            return mkNat(valNat(args[0]) + 1n);
         } else {
-            return nodVal(mkNat(0n));
+            return mkNat(0n);
         }
     } else {
         throw 'Unimplemented in pluneval';
     }
 }
 
+
 // Entry point.
 //
-// (%%) :: Pln -> Pln -> Pln
-export function push(head : Pln, tail : Pln) : Pln {
-    if (head.arity == 1) {
-        return pluneval(force(head.nod), [tail])
+// (%%) :: Fan -> Fan -> Fan
+export function push(head : Fan, tail : Fan) : Fan {
+    if (arity(head) == 1n) {
+        return pluneval(head, [tail])
     } else {
-        return {arity: head.arity - 1, nod: mkApp(head.nod, tail) }
+        return mkApp(head, tail);
     }
 }
+
