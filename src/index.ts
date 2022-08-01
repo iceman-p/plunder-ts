@@ -28,12 +28,89 @@ export function mkThunk(val : (() => Fan)) : Fan {
     return t;
 }
 
+// Non-exported check to ensure a Fan is forced. This is not the "public"
+// force() function that does full forcing, but a thing used to force the
+// current top layer.
+function whnf(f : Fan) {
+    if (f.t == Kind.THUNK) {
+        f.x();
+    }
+}
+
+// -----------------------------------------------------------------------
+
+export enum RunKind {
+    LOG,
+    CNS,
+    REF,
+    KAL,
+    LET
+}
+
+// Intermediate form for the compiler.
+//
+export type Run =
+    | { t: RunKind.LOG, l: string, r: Run }
+    | { t: RunKind.CNS, c: Fan }
+    | { t: RunKind.REF, r: number }
+    | { t: RunKind.KAL, f: Run, x: Run }
+    | { t: RunKind.LET, i: number, v: Run, f: Run }
+
+export type Prog = { arity: number,
+                     stkSz: number,
+                     prgm: (args : Fan[]) => Fan }
+
+// Given a raw fan value, build out an intermediate Run structure describing
+// the steps to run, plus the maximum stack size that this needs.
+//
+// internal detail, exported for testing.
+export function fanToRun(maxArg : number, val : Fan) : [number, Run] {
+    whnf(val);
+
+    if (val.t == Kind.NAT && val.v <= BigInt(maxArg)) {
+        return [maxArg, {t: RunKind.REF, r: Number(val.v)}];
+    }
+
+    if (val.t == Kind.APP) {
+        whnf(val.f);
+
+        if (val.f.t == Kind.NAT) {
+            // If the toplevel `val` is `(2 x)`:
+            if (val.f.v == 2n) {
+                return [maxArg, {t: RunKind.CNS, c: val.x }]
+            }
+        } else if (val.f.t == Kind.APP) {
+            if (val.f.f.t == Kind.NAT) {
+                // If the toplevel `val` is `(0 f x)`:
+                if (val.f.f.v == 0n) {
+                    let [fMax, fRun] = fanToRun(maxArg, val.f.x);
+                    let [xMax, xRun] = fanToRun(maxArg, val.x);
+                    return [Math.max(fMax, xMax),
+                            {t: RunKind.KAL, f:fRun, x:xRun}];
+                }
+                // If the toplevel `val` is `(1 v b)`:
+                if (val.f.f.v == 1n) {
+                    let [vMax, vRun] = fanToRun(maxArg + 1, val.f.x);
+                    let [bMax, bRun] = fanToRun(maxArg + 1, val.x);
+                    return [Math.max(vMax, bMax),
+                            { t: RunKind.LET, i: maxArg + 1, v:vRun, f:bRun }];
+                }
+            }
+        }
+    }
+
+    return [maxArg, {t: RunKind.CNS, c: val }]
+}
+
+/*
+export function mkFun(name : bigint, arity : bigint, body : Fan) {
+}
+*/
+
 // -----------------------------------------------------------------------
 
 function arity(val : Fan) : Nat {
-    if (val.t == Kind.THUNK) {
-        val.x();
-    }
+    whnf(val);
 
     switch (val.t) {
         case Kind.APP:
@@ -53,9 +130,7 @@ function arity(val : Fan) : Nat {
 }
 
 function force(val : Fan) : Fan {
-    if (val.t == Kind.THUNK) {
-        val.x();
-    }
+    whnf(val);
 
     if (val.t == Kind.APP) {
         force(val.f);
@@ -65,9 +140,7 @@ function force(val : Fan) : Fan {
 }
 
 function valNat(val : Fan) : Nat {
-    if (val.t == Kind.THUNK) {
-        val.x();
-    }
+    whnf(val);
 
     if (val.t == Kind.NAT) {
         return val.v;
@@ -75,43 +148,6 @@ function valNat(val : Fan) : Nat {
         return 0n;
     }
 }
-
-// -----------------------------------------------------------------------
-
-/*
-
-// I need subst to build a thunk
-
-function subst(r : bigint, xs : Pln[], b : Pln) {
-    let v = force(b.nod);
-    if (v.kind == NodKind.NAT && v.nat < r) {
-        
-    }
-
-    
-}
-
-// Build a LAW.
-//
-// For v1 of this, we're going to follow the super short 
-function mkLaw(name : bigint, arg : bigint, bod : Pln) : Pln {
-    if (arg == 0n) {
-        // We build a thunk for res
-
-
-        //let x = 
-    } else {
-        return {
-            state: ThunkState.VAL, val: {
-                kind: NodKind.LAW,
-                name: name,
-                args: arg,
-                bod: bod }
-        }
-    }
-}
-
-*/
 
 // -----------------------------------------------------------------------
 
@@ -126,7 +162,8 @@ function pluneval(n : Fan, args : Fan[]) : Fan {
         let v = n.v;
 
         if (v == 0n && args.length == 3) {
-            throw "mkLaw unimplemented";
+            //return mkFun(n.n, n.a, n.b);
+            throw "mkfun"
         } else if (v == 1n && args.length == 4) {
             /*
             let f, a, n, x;
