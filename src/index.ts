@@ -22,7 +22,7 @@ export function mkNat(v:Nat) : Fan { return { t:Kind.NAT, v:v } }
 export function mkThunk(val : (() => Fan)) : Fan {
   let t : Fan = { t: Kind.THUNK, x: function () {} }
   t.x = function () {
-    let v = val()
+    let v = val();
     Object.assign(t, v);
   }
   return t;
@@ -32,7 +32,7 @@ export function mkThunk(val : (() => Fan)) : Fan {
 // force() function that does full forcing, but a thing used to force the
 // current top layer.
 function whnf(f : Fan) {
-  if (f.t == Kind.THUNK) {
+  while (f.t == Kind.THUNK) {
     f.x();
   }
 }
@@ -110,11 +110,11 @@ export function compileRunToFunction(maxStk : number, r : Run)
 : (args : Fan[]) => Fan
 {
   let preamble = `
-let stk = [...rawargs];
-if (` + maxStk + ` > stk.length) {
-stk.concat(Array(` + maxStk + ` - rawargs.length));
-}
-`;
+    let stk = [...rawargs];
+    if (` + maxStk + ` > stk.length) {
+      stk.concat(Array(` + maxStk + ` - rawargs.length));
+    }
+    `;
 
   // Constant values need to be passed into the function instead of being in
   // the text because they might be thunks and their evaluation should cause
@@ -146,8 +146,6 @@ stk.concat(Array(` + maxStk + ` - rawargs.length));
   // We walk the tree to turn everything into a set of statements.
   let functext = preamble + walk(r);
 
-  console.log(functext);
-
   let fun = new Function("push", "constants", "rawargs", functext) as
   ((p : (h : Fan, t : Fan) => Fan, consts: Fan[], args: Fan[]) => Fan);
 
@@ -156,25 +154,18 @@ stk.concat(Array(` + maxStk + ` - rawargs.length));
   }
 }
 
-let f = compileRunToFunction(
-  2,
-  { t: RunKind.LOG, l: "begin",
-    r: { t: RunKind.LET,
-         i: 2,
-         v: { t: RunKind.REF, r: 1 },
-         f: { t: RunKind.REF, r: 2 }}});
-let r = f([mkNat(0n), mkNat(15n)]);
-console.log(r);
+export function mkFun(name : bigint, arity : bigint, body : Fan) : Fan {
+  let thunk : Fan = mkThunk(() => {
+    let [stkSize, run] = fanToRun(Number(arity), body);
+    let fun = compileRunToFunction(stkSize, run);
+    return {t: Kind.FUN, n:name, a:arity, b: body, x: fun};
+  });
 
-export function mkFun(name : bigint, arity : bigint, body : Fan) {
   if (arity == 0n) {
-    throw "Implement mkFun 0 case"
+    whnf(thunk);
+    return (thunk as {t: Kind.FUN, x:(f : Fan[]) => Fan}).x([thunk]);
   } else {
-    return mkThunk(() => {
-      let [stkSize, run] = fanToRun(Number(arity), body);
-      let fun = compileRunToFunction(stkSize, run);
-      return {t: Kind.FUN, n:name, a:arity, b: body, x: fun};
-    });
+    return thunk;
   }
 }
 
@@ -238,22 +229,20 @@ function pluneval(n : Fan, args : Fan[]) : Fan {
         if (v == 0n && args.length == 3) {
           return mkFun(valNat(args[0]), valNat(args[1]), args[2]);
         } else if (v == 1n && args.length == 4) {
-          /*
-            let f, a, n, x;
-            [f, a, n, x] = args;
-            let arity = x.arity;
-            let nod = force(x.nod);
+          let f : Fan, a : Fan, n : Fan, x : Fan;
+          [f, a, n, x] = args;
 
-            if (nod.kind == NodKind.APP) {
-            return push(push(a, { arity: arity + 1, nod: nod.head }),
-            nod.tail);
-            } else if (nod.kind == NodKind.NAT) {
-            return push(n, x);
-            } else {
-            throw "rest of cases in wut";
-            }
-          */
-          throw "unimplemented during porting"
+          let nod = force(x);
+          switch (nod.t) {
+            case Kind.FUN:
+              return push(push(push(f, mkNat(nod.n)), mkNat(nod.a)), nod.b);
+            case Kind.APP:
+              return push(push(a, nod.f), nod.x);
+            case Kind.NAT:
+              return push(n, x);
+            case Kind.THUNK:
+              throw "Impossible to have a thunk here.";
+          }
         } else if (v == 2n && args.length == 3) {
           let z, p, x;
           [z, p, x] = args;
@@ -261,6 +250,7 @@ function pluneval(n : Fan, args : Fan[]) : Fan {
           if (n == 0n) {
             return z;
           } else {
+            // TODO: Inline to save stack frames.
             return push(p, mkNat(n - 1n));
           }
         } else if (v == 3n && args.length == 1) {
@@ -270,7 +260,7 @@ function pluneval(n : Fan, args : Fan[]) : Fan {
         }
       }
       case Kind.FUN:
-        throw 'Unimplemented in pluneval';
+        return n.x([n, ...args]);
       case Kind.THUNK:
         n.x();
         continue;

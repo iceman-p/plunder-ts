@@ -1,30 +1,49 @@
 import * as p from '../src/index';
 
-function expectFanLine(args : p.Fan[]) {
-  let prev = args[0]
+function expectFanLine(...args : (bigint | p.Fan)[]) {
+  let prev = asFan(args[0])
   for (let i = 1; i < args.length; ++i) {
-    prev = p.push(prev, args[i]);
+    prev = p.push(prev, asFan(args[i]));
   }
 
   return expect(prev);
+}
+
+function asFan(x : bigint | p.Fan) {
+  if (typeof x == 'bigint') {
+    return p.mkNat(x);
+  } else {
+    return x;
+  }
+}
+
+function line(...args : (bigint | p.Fan)[]) {
+  let prev = asFan(args[0]);
+  for (let i = 1; i < args.length; ++i) {
+    prev = p.push(prev, asFan(args[i]));
+  }
+
+  return prev;
 }
 
 describe('testing nat evaluation', () => {
   // test('testing wut check NAT `1 `', () => {
   // });
 
+  test('testing wut nat check `1 0 0 3 5` -> 6', () => {
+    expectFanLine(1n, 0n, 0n, 3n, 5n).toStrictEqual(p.mkNat(6n));
+  });
+
   test('testing integer zero check `2 10 11 0` -> 10', () => {
-    expectFanLine([p.mkNat(2n), p.mkNat(10n), p.mkNat(11n), p.mkNat(0n)])
-      .toStrictEqual(p.mkNat(10n));
+    expectFanLine(2n, 10n, 11n, 0n).toStrictEqual(p.mkNat(10n));
   });
 
   test('testing integer positive check `2 10 3 15` -> 15', () => {
-    expectFanLine([p.mkNat(2n), p.mkNat(10n), p.mkNat(3n), p.mkNat(15n)])
-      .toStrictEqual(p.mkNat(15n));
+    expectFanLine(2n, 10n, 3n, 15n).toStrictEqual(p.mkNat(15n));
   });
 
   test('testing increment `3 5` -> 6', () => {
-    expectFanLine([p.mkNat(3n), p.mkNat(5n)]).toStrictEqual(p.mkNat(6n));
+    expectFanLine(3n, 5n).toStrictEqual(p.mkNat(6n));
   });
 });
 
@@ -62,6 +81,18 @@ describe('compiler tests', () => {
                              i: 2,
                              v: { t: p.RunKind.REF, r: 1 },
                              f: { t: p.RunKind.REF, r: 2 } } ]);
+    });
+  });
+
+  describe("function execution tests", () => {
+    test('test function application ((0 1 1 1) 5)', () => {
+      let f = line(0n, 1n, 1n, 1n);
+      expect(p.push(f, p.mkNat(5n))).toStrictEqual(p.mkNat(5n));
+    });
+
+    test('test function application ((0 1 1 (2 7)) 5)', () => {
+      let f = line(0n, 1n, 1n, line(2n, 7n));
+      expect(p.push(f, p.mkNat(5n))).toStrictEqual(p.mkNat(7n));
     });
   });
 });
