@@ -1,60 +1,60 @@
 export enum Kind {
-    APP = 1,
-    NAT,
-    FUN,
-    THUNK,
+  APP = 1,
+  NAT,
+  FUN,
+  THUNK,
 }
 
 export type Nat = bigint;
 
 export type Fan =
-    | { t: Kind.APP; f:Fan; x:Fan }
-    | { t: Kind.NAT; v:Nat }
-    | { t: Kind.FUN; n:Nat; a:Nat; b:Fan; x:(f : Fan[]) => Fan }
-    | { t: Kind.THUNK; x:() => void }
+  | { t: Kind.APP; f:Fan; x:Fan }
+  | { t: Kind.NAT; v:Nat }
+  | { t: Kind.FUN; n:Nat; a:Nat; b:Fan; x:(f : Fan[]) => Fan }
+  | { t: Kind.THUNK; x:() => void }
 
 export function mkApp(f:Fan, x:Fan) : Fan {
-    return mkThunk(function () { return { t:Kind.APP, f:f, x:x }})
+  return mkThunk(function () { return { t:Kind.APP, f:f, x:x }})
 }
 
 export function mkNat(v:Nat) : Fan { return { t:Kind.NAT, v:v } }
 
 export function mkThunk(val : (() => Fan)) : Fan {
-    let t : Fan = { t: Kind.THUNK, x: function () {} }
-    t.x = function () {
-        let v = val()
-        Object.assign(t, v);
-    }
-    return t;
+  let t : Fan = { t: Kind.THUNK, x: function () {} }
+  t.x = function () {
+    let v = val()
+    Object.assign(t, v);
+  }
+  return t;
 }
 
 // Non-exported check to ensure a Fan is forced. This is not the "public"
 // force() function that does full forcing, but a thing used to force the
 // current top layer.
 function whnf(f : Fan) {
-    if (f.t == Kind.THUNK) {
-        f.x();
-    }
+  if (f.t == Kind.THUNK) {
+    f.x();
+  }
 }
 
 // -----------------------------------------------------------------------
 
 export enum RunKind {
-    LOG,
-    CNS,
-    REF,
-    KAL,
-    LET
+  LOG,
+  CNS,
+  REF,
+  KAL,
+  LET
 }
 
 // Intermediate form for the compiler.
 //
 export type Run =
-    | { t: RunKind.LOG, l: string, r: Run }
-    | { t: RunKind.CNS, c: Fan }
-    | { t: RunKind.REF, r: number }
-    | { t: RunKind.KAL, f: Run, x: Run }
-    | { t: RunKind.LET, i: number, v: Run, f: Run }
+  | { t: RunKind.LOG, l: string, r: Run }
+  | { t: RunKind.CNS, c: Fan }
+  | { t: RunKind.REF, r: number }
+  | { t: RunKind.KAL, f: Run, x: Run }
+  | { t: RunKind.LET, i: number, v: Run, f: Run }
 
 export type Prog = { arity: number,
                      stkSz: number,
@@ -65,41 +65,41 @@ export type Prog = { arity: number,
 //
 // internal detail, exported for testing.
 export function fanToRun(maxArg : number, val : Fan) : [number, Run] {
-    whnf(val);
+  whnf(val);
 
-    if (val.t == Kind.NAT && val.v <= BigInt(maxArg)) {
-        return [maxArg, {t: RunKind.REF, r: Number(val.v)}];
-    }
+  if (val.t == Kind.NAT && val.v <= BigInt(maxArg)) {
+    return [maxArg, {t: RunKind.REF, r: Number(val.v)}];
+  }
 
-    if (val.t == Kind.APP) {
-        whnf(val.f);
+  if (val.t == Kind.APP) {
+    whnf(val.f);
 
-        if (val.f.t == Kind.NAT) {
-            // If the toplevel `val` is `(2 x)`:
-            if (val.f.v == 2n) {
-                return [maxArg, {t: RunKind.CNS, c: val.x }]
-            }
-        } else if (val.f.t == Kind.APP) {
-            if (val.f.f.t == Kind.NAT) {
-                // If the toplevel `val` is `(0 f x)`:
-                if (val.f.f.v == 0n) {
-                    let [fMax, fRun] = fanToRun(maxArg, val.f.x);
-                    let [xMax, xRun] = fanToRun(maxArg, val.x);
-                    return [Math.max(fMax, xMax),
-                            {t: RunKind.KAL, f:fRun, x:xRun}];
-                }
-                // If the toplevel `val` is `(1 v b)`:
-                if (val.f.f.v == 1n) {
-                    let [vMax, vRun] = fanToRun(maxArg + 1, val.f.x);
-                    let [bMax, bRun] = fanToRun(maxArg + 1, val.x);
-                    return [Math.max(vMax, bMax),
-                            { t: RunKind.LET, i: maxArg + 1, v:vRun, f:bRun }];
-                }
-            }
+    if (val.f.t == Kind.NAT) {
+      // If the toplevel `val` is `(2 x)`:
+      if (val.f.v == 2n) {
+        return [maxArg, {t: RunKind.CNS, c: val.x }]
+      }
+    } else if (val.f.t == Kind.APP) {
+      if (val.f.f.t == Kind.NAT) {
+        // If the toplevel `val` is `(0 f x)`:
+        if (val.f.f.v == 0n) {
+          let [fMax, fRun] = fanToRun(maxArg, val.f.x);
+          let [xMax, xRun] = fanToRun(maxArg, val.x);
+          return [Math.max(fMax, xMax),
+                  {t: RunKind.KAL, f:fRun, x:xRun}];
         }
+        // If the toplevel `val` is `(1 v b)`:
+        if (val.f.f.v == 1n) {
+          let [vMax, vRun] = fanToRun(maxArg + 1, val.f.x);
+          let [bMax, bRun] = fanToRun(maxArg + 1, val.x);
+          return [Math.max(vMax, bMax),
+                  { t: RunKind.LET, i: maxArg + 1, v:vRun, f:bRun }];
+        }
+      }
     }
+  }
 
-    return [maxArg, {t: RunKind.CNS, c: val }]
+  return [maxArg, {t: RunKind.CNS, c: val }]
 }
 
 // Given the Run structure from `fanToRun`, translate the Run structure into
@@ -109,115 +109,115 @@ export function fanToRun(maxArg : number, val : Fan) : [number, Run] {
 export function compileRunToFunction(maxStk : number, r : Run)
 : (args : Fan[]) => Fan
 {
-    let preamble = `
-        let stk = [...rawargs];
-        if (` + maxStk + ` > stk.length) {
-            stk.concat(Array(` + maxStk + ` - rawargs.length));
-        }
-    `;
+  let preamble = `
+let stk = [...rawargs];
+if (` + maxStk + ` > stk.length) {
+stk.concat(Array(` + maxStk + ` - rawargs.length));
+}
+`;
 
-    // Constant values need to be passed into the function instead of being in
-    // the text because they might be thunks and their evaluation should cause
-    // them to be evaluated outside of this function. They could also be very
-    // large values and textifying them could be very expensive.
-    let constants : Fan[] = [];
+  // Constant values need to be passed into the function instead of being in
+  // the text because they might be thunks and their evaluation should cause
+  // them to be evaluated outside of this function. They could also be very
+  // large values and textifying them could be very expensive.
+  let constants : Fan[] = [];
 
-    function walk(r : Run) : string {
-        switch (r.t) {
-            case RunKind.LOG:
-                let escaped = JSON.stringify(r.l);
-                return "console.log(" + escaped + ");\n" + walk(r.r);
-            case RunKind.CNS:
-                let idx = constants.length
-                constants.push(r.c);
-                return "return constants[" + idx + "];";
-            case RunKind.REF:
-                return "return stk[" + r.r + "];"
-            case RunKind.KAL:
-                return "return push((function(){\n" + walk(r.f) +
-                    "\n})(), (function(){\n" + walk(r.x) + "\n})());";
-            case RunKind.LET:
-                return "stk[" + r.i + "] = (function(){\n" + walk(r.v) +
-                    "\n})();\n" +
-                    walk(r.f);
-        }
+  function walk(r : Run) : string {
+    switch (r.t) {
+      case RunKind.LOG:
+        let escaped = JSON.stringify(r.l);
+        return "console.log(" + escaped + ");\n" + walk(r.r);
+      case RunKind.CNS:
+        let idx = constants.length
+        constants.push(r.c);
+        return "return constants[" + idx + "];";
+      case RunKind.REF:
+        return "return stk[" + r.r + "];"
+      case RunKind.KAL:
+        return "return push((function(){\n" + walk(r.f) +
+          "\n})(), (function(){\n" + walk(r.x) + "\n})());";
+      case RunKind.LET:
+        return "stk[" + r.i + "] = (function(){\n" + walk(r.v) +
+          "\n})();\n" +
+          walk(r.f);
     }
+  }
 
-    // We walk the tree to turn everything into a set of statements.
-    let functext = preamble + walk(r);
+  // We walk the tree to turn everything into a set of statements.
+  let functext = preamble + walk(r);
 
-    console.log(functext);
+  console.log(functext);
 
-    let fun = new Function("push", "constants", "rawargs", functext) as
-      ((p : (h : Fan, t : Fan) => Fan, consts: Fan[], args: Fan[]) => Fan);
+  let fun = new Function("push", "constants", "rawargs", functext) as
+  ((p : (h : Fan, t : Fan) => Fan, consts: Fan[], args: Fan[]) => Fan);
 
-    return function(args: Fan[]) : Fan {
-        return fun(push, constants, args);
-    }
+  return function(args: Fan[]) : Fan {
+    return fun(push, constants, args);
+  }
 }
 
 let f = compileRunToFunction(
-    2,
-    { t: RunKind.LOG, l: "begin",
-      r: { t: RunKind.LET,
-           i: 2,
-           v: { t: RunKind.REF, r: 1 },
-           f: { t: RunKind.REF, r: 2 }}});
+  2,
+  { t: RunKind.LOG, l: "begin",
+    r: { t: RunKind.LET,
+         i: 2,
+         v: { t: RunKind.REF, r: 1 },
+         f: { t: RunKind.REF, r: 2 }}});
 let r = f([mkNat(0n), mkNat(15n)]);
 console.log(r);
 
 export function mkFun(name : bigint, arity : bigint, body : Fan) {
-    if (arity == 0n) {
-        throw "Implement mkFun 0 case"
-    } else {
-        return mkThunk(() => {
-            let [stkSize, run] = fanToRun(Number(arity), body);
-            let fun = compileRunToFunction(stkSize, run);
-            return {t: Kind.FUN, n:name, a:arity, b: body, x: fun};
-        });
-    }
+  if (arity == 0n) {
+    throw "Implement mkFun 0 case"
+  } else {
+    return mkThunk(() => {
+      let [stkSize, run] = fanToRun(Number(arity), body);
+      let fun = compileRunToFunction(stkSize, run);
+      return {t: Kind.FUN, n:name, a:arity, b: body, x: fun};
+    });
+  }
 }
 
 // -----------------------------------------------------------------------
 
 function arity(val : Fan) : Nat {
-    whnf(val);
+  whnf(val);
 
-    switch (val.t) {
-        case Kind.APP:
-            return arity(val.f) - 1n;
-        case Kind.NAT:
-            switch (val.v) {
-                case 0n: return 3n;
-                case 1n: return 4n;
-                case 2n: return 3n;
-                default: return 1n;
-            }
-        case Kind.FUN:
-            return val.a;
-        case Kind.THUNK:
-            throw "Impossible: arity didn't preevaluate thunk";
-    }
+  switch (val.t) {
+    case Kind.APP:
+      return arity(val.f) - 1n;
+    case Kind.NAT:
+      switch (val.v) {
+        case 0n: return 3n;
+        case 1n: return 4n;
+        case 2n: return 3n;
+        default: return 1n;
+      }
+    case Kind.FUN:
+      return val.a;
+    case Kind.THUNK:
+      throw "Impossible: arity didn't preevaluate thunk";
+  }
 }
 
 function force(val : Fan) : Fan {
-    whnf(val);
+  whnf(val);
 
-    if (val.t == Kind.APP) {
-        force(val.f);
-        force(val.x);
-    }
-    return val;
+  if (val.t == Kind.APP) {
+    force(val.f);
+    force(val.x);
+  }
+  return val;
 }
 
 function valNat(val : Fan) : Nat {
-    whnf(val);
+  whnf(val);
 
-    if (val.t == Kind.NAT) {
-        return val.v;
-    } else {
-        return 0n;
-    }
+  if (val.t == Kind.NAT) {
+    return val.v;
+  } else {
+    return 0n;
+  }
 }
 
 // -----------------------------------------------------------------------
@@ -227,57 +227,57 @@ function valNat(val : Fan) : Nat {
 // emulate one level of tail calling by using a while loop. `continue` is a
 // tail call, `return` actually returns a result.
 function pluneval(n : Fan, args : Fan[]) : Fan {
-    while (1) {
-        switch (n.t) {
-            case Kind.APP:
-                args = [n.x].concat(args);
-                n = n.f;
-                continue;
-            case Kind.NAT: {
-                let v = n.v;
-                if (v == 0n && args.length == 3) {
-                    return mkFun(valNat(args[0]), valNat(args[1]), args[2]);
-                } else if (v == 1n && args.length == 4) {
-                  /*
-                    let f, a, n, x;
-                    [f, a, n, x] = args;
-                    let arity = x.arity;
-                    let nod = force(x.nod);
+  while (1) {
+    switch (n.t) {
+      case Kind.APP:
+        args = [n.x].concat(args);
+        n = n.f;
+        continue;
+      case Kind.NAT: {
+        let v = n.v;
+        if (v == 0n && args.length == 3) {
+          return mkFun(valNat(args[0]), valNat(args[1]), args[2]);
+        } else if (v == 1n && args.length == 4) {
+          /*
+            let f, a, n, x;
+            [f, a, n, x] = args;
+            let arity = x.arity;
+            let nod = force(x.nod);
 
-                    if (nod.kind == NodKind.APP) {
-                        return push(push(a, { arity: arity + 1, nod: nod.head }),
-                                    nod.tail);
-                    } else if (nod.kind == NodKind.NAT) {
-                        return push(n, x);
-                    } else {
-                        throw "rest of cases in wut";
-                        }
-                        */
-                    throw "unimplemented during porting"
-                } else if (v == 2n && args.length == 3) {
-                    let z, p, x;
-                    [z, p, x] = args;
-                    let n = valNat(x);
-                    if (n == 0n) {
-                        return z;
-                    } else {
-                        return push(p, mkNat(n - 1n));
-                    }
-                } else if (v == 3n && args.length == 1) {
-                    return mkNat(valNat(args[0]) + 1n);
-                } else {
-                    return mkNat(0n);
-                }
+            if (nod.kind == NodKind.APP) {
+            return push(push(a, { arity: arity + 1, nod: nod.head }),
+            nod.tail);
+            } else if (nod.kind == NodKind.NAT) {
+            return push(n, x);
+            } else {
+            throw "rest of cases in wut";
             }
-            case Kind.FUN:
-                throw 'Unimplemented in pluneval';
-            case Kind.THUNK:
-                n.x();
-                continue;
+          */
+          throw "unimplemented during porting"
+        } else if (v == 2n && args.length == 3) {
+          let z, p, x;
+          [z, p, x] = args;
+          let n = valNat(x);
+          if (n == 0n) {
+            return z;
+          } else {
+            return push(p, mkNat(n - 1n));
+          }
+        } else if (v == 3n && args.length == 1) {
+          return mkNat(valNat(args[0]) + 1n);
+        } else {
+          return mkNat(0n);
         }
+      }
+      case Kind.FUN:
+        throw 'Unimplemented in pluneval';
+      case Kind.THUNK:
+        n.x();
+        continue;
     }
+  }
 
-    throw "Impossible end of interpreter";
+  throw "Impossible end of interpreter";
 }
 
 
@@ -285,10 +285,13 @@ function pluneval(n : Fan, args : Fan[]) : Fan {
 //
 // (%%) :: Fan -> Fan -> Fan
 export function push(head : Fan, tail : Fan) : Fan {
-    if (arity(head) == 1n) {
-        return pluneval(head, [tail])
-    } else {
-        return mkApp(head, tail);
-    }
+  if (arity(head) == 1n) {
+    return pluneval(head, [tail])
+  } else {
+    return mkApp(head, tail);
+  }
 }
 
+// Local Variables:
+// typescript-indent-level: 2
+// End:
