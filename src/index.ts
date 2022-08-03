@@ -13,28 +13,173 @@ export type Fan =
   | { t: Kind.FUN; n:Nat; a:Nat; b:Fan; x:(f : Fan[]) => Fan }
   | { t: Kind.THUNK; x:() => void }
 
+function E(val:Fan)          : Fan { return whnf(val);       }
+function F(val:Fan)          : Fan { return force(val);      }
+function A(fun:Fan, arg:Fan) : Fan { return mkApp(fun, arg); }
+function N(nat:Nat)          : Fan { return mkNat(nat);      }
+
+/*
+  Given (f, [x]) where (f ... x) is known to be saturated:
+
+  Collect all the arguments and execute `f`.
+*/
+function subst(fun:Fan, args:Fan[]) : Fan {
+  while (fun.t == Kind.APP) {
+    args.push(fun.x);
+    fun = fun.f;
+  }
+
+  if (fun.t == Kind.FUN) {
+    let params = [fun as Fan]
+    for (let i=0; i<args.length; i++) {
+      params.push(args[i]);
+    }
+
+    // I think the best calling convention here may be:
+    //
+    //     fun.x.apply(fun, params);
+    //
+    // With params still in reverse order.
+    //
+    //     function die (x) { return A(this, x) }
+    //     function K (y, x) { return x; }
+    //
+    return fun.x(params);
+  }
+
+  if (fun.t == Kind.NAT) {
+    switch(fun.v) {
+      case 0n: {
+        let n = args[2];
+        let a = args[1];
+        let b = args[0];
+        return mkFun(valNat(n), valNat(a), force(args[0]))
+      }
+      case 1n: {
+        let f = args[3];
+        let a = args[2];
+        let n = args[1];
+        let x = args[0];
+
+        E(x);
+        switch (x.t) {
+          case Kind.FUN:
+            return E(A(A(A(f, N(x.n)), N(x.a)), x.b));
+          case Kind.APP:
+            return E(A(A(a, x.f), x.x));
+          case Kind.NAT:
+            return E(A(n, x));
+          case Kind.THUNK:
+            throw "Impossible to have a thunk here.";
+        }
+      }
+      case 2n: {
+        let z = args[2];
+        let p = args[1];
+        let x = args[0];
+        let xn = valNat(x)
+        if (xn == 0n) {
+          return E(z);
+        } else {
+          let res = A(p, N(xn - 1n));
+          return E(res);
+        }
+      }
+      case 3n:
+        return N(valNat(args[0]) + 1n);
+
+      default:
+        return N(0n);
+    }
+  }
+
+  throw 'impossible'; // THUNK or APP
+  return N(0n);
+}
+
+/*
+  Gets the arity of a value without evaluating it.  Returns 0 if given
+  a thunk.
+*/
+export function rawArity(x:Fan) : Nat {
+  var depth = 0n;
+  while (true) {
+    if (x.t == Kind.APP) {
+      let head = x.f;
+      x = head;
+      depth++;
+      continue;
+    }
+    if (x.t == Kind.NAT) {
+      switch (x.v) {
+        case 0n: return (3n - depth);
+        case 1n: return (4n - depth);
+        case 2n: return (3n - depth);
+        default: return (1n - depth);
+      }
+    }
+    if (x.t == Kind.FUN) {
+      return (x.a - depth);
+    }
+    return 0n;
+  };
+}
+
+/*
+  Maybe this should take multiple arguments?
+
+  Then, for example, if we are being given 4 arguments, and the first
+  argument has arity 3, then we can straight-up create a thunk that
+  directly calls the function, no need to do the whole `subst` dance
+  at all.
+*/
 export function mkApp(f:Fan, x:Fan) : Fan {
-  return mkThunk(function () { return { t:Kind.APP, f:f, x:x }})
+  if (f.t == Kind.THUNK) {
+    return mkThunk(function() {
+      let res = mkApp(E(f),x);
+      if (res.t == Kind.THUNK) { res.x(); }
+      return res;
+    });
+  }
+
+  if (rawArity(f) == 1n) {
+    return mkThunk(function() {
+      let result = subst(f,[x]);
+      return result;
+    });
+  }
+
+  return { t:Kind.APP, f:f, x:x };
 }
 
 export function mkNat(v:Nat) : Fan { return { t:Kind.NAT, v:v } }
 
-export function mkThunk(val : (() => Fan)) : Fan {
-  let t : Fan = { t: Kind.THUNK, x: function () {} }
+export function mkThunk(exe : (() => Fan)) : Fan {
+  let t = { t: Kind.THUNK, x: function () {} }
+
   t.x = function () {
-    let v = val();
+    let v = exe();
+    let th = (t as any);  // Now that lazy evaluation is actually
+    // happening, the `x` field was being left on
+    // the result.
+    delete th.x;
     Object.assign(t, v);
   }
-  return t;
+
+  return (t as Fan);
 }
 
 // Non-exported check to ensure a Fan is forced. This is not the "public"
 // force() function that does full forcing, but a thing used to force the
 // current top layer.
-function whnf(f : Fan) {
-  while (f.t == Kind.THUNK) {
+function whnf(f : Fan) : Fan {
+  if (f.t == Kind.THUNK) {
     f.x();
   }
+  if (f.t == Kind.THUNK) {
+    throw "NO WHNF AFTER EVAL";
+  }
+  return f;
 }
 
 // -----------------------------------------------------------------------
@@ -110,11 +255,11 @@ export function compileRunToFunction(maxStk : number, r : Run)
 : (args : Fan[]) => Fan
 {
   let preamble = `
-    let stk = [...rawargs];
-    if (` + maxStk + ` > stk.length) {
-      stk.concat(Array(` + maxStk + ` - rawargs.length));
-    }
-    `;
+let stk = [...rawargs];
+if (` + maxStk + ` > stk.length) {
+stk.concat(Array(` + maxStk + ` - rawargs.length));
+}
+`;
 
   // Constant values need to be passed into the function instead of being in
   // the text because they might be thunks and their evaluation should cause
@@ -134,7 +279,7 @@ export function compileRunToFunction(maxStk : number, r : Run)
       case RunKind.REF:
         return "return stk[" + r.r + "];"
       case RunKind.KAL:
-        return "return push((function(){\n" + walk(r.f) +
+        return "return mkApp((function(){\n" + walk(r.f) +
           "\n})(), (function(){\n" + walk(r.x) + "\n})());";
       case RunKind.LET:
         return "stk[" + r.i + "] = (function(){\n" + walk(r.v) +
@@ -146,52 +291,29 @@ export function compileRunToFunction(maxStk : number, r : Run)
   // We walk the tree to turn everything into a set of statements.
   let functext = preamble + walk(r);
 
-  let fun = new Function("push", "constants", "rawargs", functext) as
+  let fun = new Function("mkApp", "constants", "rawargs", functext) as
   ((p : (h : Fan, t : Fan) => Fan, consts: Fan[], args: Fan[]) => Fan);
 
   return function(args: Fan[]) : Fan {
-    return fun(push, constants, args);
+    return fun(mkApp, constants, args);
   }
 }
 
-export function mkFun(name : bigint, arity : bigint, body : Fan) : Fan {
-  let thunk : Fan = mkThunk(() => {
-    let [stkSize, run] = fanToRun(Number(arity), body);
-    let fun = compileRunToFunction(stkSize, run);
-    return {t: Kind.FUN, n:name, a:arity, b: body, x: fun};
-  });
-
-  if (arity == 0n) {
-    whnf(thunk);
-    return (thunk as {t: Kind.FUN, x:(f : Fan[]) => Fan}).x([thunk]);
+export function mkFun(name : bigint, args : bigint, body : Fan) : Fan {
+  let [stkSize, run] = fanToRun(Number(args), body);
+  let fun = compileRunToFunction(stkSize, run);
+  if (args == 0n) {
+    let execu = () => { throw "Infinite Loop"; }
+    let thunk = {t: Kind.THUNK, x:execu} as Fan
+    return fun([thunk]);
   } else {
-    return thunk;
+    return {t: Kind.FUN, n:name, a:args, b: body, x: fun};
   }
 }
 
 // -----------------------------------------------------------------------
 
-function arity(val : Fan) : Nat {
-  whnf(val);
-
-  switch (val.t) {
-    case Kind.APP:
-      return arity(val.f) - 1n;
-    case Kind.NAT:
-      switch (val.v) {
-        case 0n: return 3n;
-        case 1n: return 4n;
-        case 2n: return 3n;
-        default: return 1n;
-      }
-    case Kind.FUN:
-      return val.a;
-    case Kind.THUNK:
-      throw "Impossible: arity didn't preevaluate thunk";
-  }
-}
-
-function force(val : Fan) : Fan {
+export function force(val : Fan) : Fan {
   whnf(val);
 
   if (val.t == Kind.APP) {
@@ -211,77 +333,7 @@ function valNat(val : Fan) : Nat {
   }
 }
 
-// -----------------------------------------------------------------------
-
-//
-// Javascript isn't a real language: it has no tail call optimization. So
-// emulate one level of tail calling by using a while loop. `continue` is a
-// tail call, `return` actually returns a result.
-function pluneval(n : Fan, args : Fan[]) : Fan {
-  while (1) {
-    switch (n.t) {
-      case Kind.APP:
-        args = [n.x].concat(args);
-        n = n.f;
-        continue;
-      case Kind.NAT: {
-        let v = n.v;
-        if (v == 0n && args.length == 3) {
-          return mkFun(valNat(args[0]), valNat(args[1]), args[2]);
-        } else if (v == 1n && args.length == 4) {
-          let f : Fan, a : Fan, n : Fan, x : Fan;
-          [f, a, n, x] = args;
-
-          let nod = force(x);
-          switch (nod.t) {
-            case Kind.FUN:
-              return push(push(push(f, mkNat(nod.n)), mkNat(nod.a)), nod.b);
-            case Kind.APP:
-              return push(push(a, nod.f), nod.x);
-            case Kind.NAT:
-              return push(n, x);
-            case Kind.THUNK:
-              throw "Impossible to have a thunk here.";
-          }
-        } else if (v == 2n && args.length == 3) {
-          let z, p, x;
-          [z, p, x] = args;
-          let n = valNat(x);
-          if (n == 0n) {
-            return z;
-          } else {
-            // TODO: Inline to save stack frames.
-            return push(p, mkNat(n - 1n));
-          }
-        } else if (v == 3n && args.length == 1) {
-          return mkNat(valNat(args[0]) + 1n);
-        } else {
-          return mkNat(0n);
-        }
-      }
-      case Kind.FUN:
-        return n.x([n, ...args]);
-      case Kind.THUNK:
-        n.x();
-        continue;
-    }
-  }
-
-  throw "Impossible end of interpreter";
-}
-
-
-// Entry point.
-//
-// (%%) :: Fan -> Fan -> Fan
-export function push(head : Fan, tail : Fan) : Fan {
-  if (arity(head) == 1n) {
-    return pluneval(head, [tail])
-  } else {
-    return mkApp(head, tail);
-  }
-}
-
 // Local Variables:
 // typescript-indent-level: 2
 // End:
+// vim: noai:ts=2:sw=2
