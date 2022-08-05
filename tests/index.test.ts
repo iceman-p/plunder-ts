@@ -6,27 +6,19 @@ function F(val:Fan)          : Fan { return p.force(val);      }
 function A(fun:Fan, arg:Fan) : Fan { return p.mkApp(fun, arg); }
 function N(nat:Nat)          : Fan { return p.mkNat(nat);      }
 
-function expectFanLine(...args : (bigint | Fan)[]) {
-  let prev = asFan(args[0])
+function expectFanLine(...args : Fan[]) {
+  let prev = args[0]
   for (let i = 1; i < args.length; ++i) {
-    prev = A(prev, asFan(args[i]));
+    prev = A(prev, args[i]);
   }
 
   return expect(F(prev));
 }
 
-function asFan(x : bigint | Fan) {
-  if (typeof x == 'bigint') {
-    return N(x);
-  } else {
-    return x;
-  }
-}
-
-function line(...args : (bigint | Fan)[]) {
-  let prev = asFan(args[0]);
+function line(...args : Fan[]) {
+  let prev = args[0];
   for (let i = 1; i < args.length; ++i) {
-    prev = A(prev, asFan(args[i]));
+    prev = A(prev, args[i]);
   }
 
   return F(prev);
@@ -37,19 +29,19 @@ describe('testing nat evaluation', () => {
   // });
 
   test('testing increment `3 5` -> 6', () => {
-    expectFanLine(3n, 5n).toStrictEqual(N(6n));
+    expectFanLine(N(3n), N(5n)).toStrictEqual(N(6n));
   });
 
   test('testing wut nat check `1 0 0 3 5` -> 6', () => {
-    expectFanLine(1n, 0n, 0n, 3n, 5n).toStrictEqual(N(6n));
+    expectFanLine(N(1n), N(0n), N(0n), N(3n), N(5n)).toStrictEqual(N(6n));
   });
 
   test('testing integer zero check `2 10 11 0` -> 10', () => {
-    expectFanLine(2n, 10n, 11n, 0n).toStrictEqual(N(10n));
+    expectFanLine(N(2n), N(10n), N(11n), N(0n)).toStrictEqual(N(10n));
   });
 
   test('testing integer positive check `2 10 3 15` -> 15', () => {
-    expectFanLine(2n, 10n, 3n, 15n).toStrictEqual(N(15n));
+    expectFanLine(N(2n), N(10n), N(3n), N(15n)).toStrictEqual(N(15n));
   });
 
 });
@@ -91,12 +83,12 @@ describe('compiler tests', () => {
 
   describe("function execution tests", () => {
     test('test function application ((0 1 1 1) 5)', () => {
-      let f = line(0n, 1n, 1n, 1n);
+      let f = line(N(0n), N(1n), N(1n), N(1n));
       expect(F(A(f, N(5n)))).toStrictEqual(N(5n));
     });
 
     test('test function application ((0 1 1 (2 7)) 5)', () => {
-      let f = line(0n, 1n, 1n, line(2n, 7n));
+      let f = line(N(0n), N(1n), N(1n), line(N(2n), N(7n)));
       expect(F(A(f, N(5n)))).toStrictEqual(N(7n));
     });
   });
