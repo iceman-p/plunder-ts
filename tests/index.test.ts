@@ -1,10 +1,12 @@
+import { Kind, Nat, Fan } from "../src/types"
+
 import * as p from '../src/index';
 
-function F(val:p.Fan)            : p.Fan { return p.force(val);      }
-function A(fun:p.Fan, arg:p.Fan) : p.Fan { return p.mkApp(fun, arg); }
-function N(nat:p.Nat)            : p.Fan { return p.mkNat(nat);      }
+function F(val:Fan)          : Fan { return p.force(val);      }
+function A(fun:Fan, arg:Fan) : Fan { return p.mkApp(fun, arg); }
+function N(nat:Nat)          : Fan { return p.mkNat(nat);      }
 
-function expectFanLine(...args : (bigint | p.Fan)[]) {
+function expectFanLine(...args : (bigint | Fan)[]) {
   let prev = asFan(args[0])
   for (let i = 1; i < args.length; ++i) {
     prev = A(prev, asFan(args[i]));
@@ -13,7 +15,7 @@ function expectFanLine(...args : (bigint | p.Fan)[]) {
   return expect(F(prev));
 }
 
-function asFan(x : bigint | p.Fan) {
+function asFan(x : bigint | Fan) {
   if (typeof x == 'bigint') {
     return N(x);
   } else {
@@ -21,7 +23,7 @@ function asFan(x : bigint | p.Fan) {
   }
 }
 
-function line(...args : (bigint | p.Fan)[]) {
+function line(...args : (bigint | Fan)[]) {
   let prev = asFan(args[0]);
   for (let i = 1; i < args.length; ++i) {
     prev = A(prev, asFan(args[i]));
@@ -104,3 +106,4 @@ describe('compiler tests', () => {
 // Local Variables:
 // typescript-indent-level: 2
 // End:
+// vim: noai:ts=2:sw=2

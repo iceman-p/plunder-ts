@@ -1,22 +1,9 @@
-export enum Kind {
-  APP = 1,
-  NAT,
-  FUN,
-  THUNK,
-}
+import { Kind, Nat, Fan } from "./types"
 
-export type Nat = bigint;
-
-export type Fan =
-  | { t: Kind.APP; f:Fan; x:Fan }
-  | { t: Kind.NAT; v:Nat }
-  | { t: Kind.FUN; n:Nat; a:Nat; b:Fan; x:(f : Fan[]) => Fan }
-  | { t: Kind.THUNK; x:() => void }
-
-function E(val:Fan)          : Fan { return whnf(val);       }
-function F(val:Fan)          : Fan { return force(val);      }
-function A(fun:Fan, arg:Fan) : Fan { return mkApp(fun, arg); }
-function N(nat:Nat)          : Fan { return mkNat(nat);      }
+export function E(val:Fan)          : Fan { return whnf(val);       }
+export function F(val:Fan)          : Fan { return force(val);      }
+export function A(fun:Fan, arg:Fan) : Fan { return mkApp(fun, arg); }
+export function N(nat:Nat)          : Fan { return mkNat(nat);      }
 
 /*
   Given (f, [x]) where (f ... x) is known to be saturated:
