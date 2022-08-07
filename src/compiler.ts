@@ -1,5 +1,6 @@
 import { Kind, Nat, Fan } from "./types"
 import * as p from '../src/index';
+import * as bigintConversion from 'bigint-conversion'
 
 (BigInt.prototype as any).toJSON = function () {
   return this.toString();
@@ -216,6 +217,8 @@ export function optToFunction(name : string,
 
   f.push("}");
 
+  console.log(f.join(''));
+
   let builder = new Function("AP", "constants", f.join('')) as any;
   // TODO: Actually figuring out the type here is wack, and I bet you can't do
   // it without dependent types on `argc`?
@@ -233,8 +236,23 @@ export function compile(name : bigint, args : bigint, fanBody : Fan)
       let [name, run] = a;
       return [name, optimize(run)] });
 
-  // TODO: Wrong name for now, process based off name.
-  return optToFunction("BIG", argc, topOptLet, optBody);
+  // Create a valid javascripty name for the function. This is either the law
+  // name if printable, or just "_nameAsNumber".
+  let strName = "";
+  try {
+    let converted = bigintConversion.bigintToText(name);
+    if (/^[A-Za-z0-9]$/.test(converted)) {
+      strName = converted;
+    }
+  } catch {
+    strName = "";
+  }
+
+  if (strName == "") {
+    strName = "_" + name.toString();
+  }
+
+  return optToFunction(strName, argc, topOptLet, optBody);
 }
 
 
