@@ -7,21 +7,12 @@ function A(fun:Fan, arg:Fan) : Fan { return p.mkApp(fun, arg); }
 function N(nat:Nat)          : Fan { return p.mkNat(nat);      }
 
 function expectFanLine(...args : Fan[]) {
-  let prev = args[0]
-  for (let i = 1; i < args.length; ++i) {
-    prev = A(prev, args[i]);
-  }
-
+  let prev = p.AP(args[0], ...args.slice(1));
   return expect(F(prev));
 }
 
 function line(...args : Fan[]) {
-  let prev = args[0];
-  for (let i = 1; i < args.length; ++i) {
-    prev = A(prev, args[i]);
-  }
-
-  return F(prev);
+  return F(p.AP(args[0], ...args.slice(1)));
 }
 
 describe('testing nat evaluation', () => {
@@ -87,6 +78,7 @@ describe('compiler tests', () => {
       expect(F(A(f, N(5n)))).toStrictEqual(N(5n));
     });
 
+    // TODO: This still fails.
     test('test function application ((0 1 1 (2 7)) 5)', () => {
       let f = line(N(0n), N(1n), N(1n), line(N(2n), N(7n)));
       expect(F(A(f, N(5n)))).toStrictEqual(N(7n));

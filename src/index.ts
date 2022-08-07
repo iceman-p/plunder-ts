@@ -139,6 +139,18 @@ export function mkApp(f:Fan, x:Fan) : Fan {
   return { t:Kind.APP, f:f, x:x };
 }
 
+// Version 1 of trying to write this failed. Not burning more time on it, this
+// just does the silly recursive thing instead.
+export function AP(f:Fan, ...xs:Fan[]) : Fan {
+  if (xs.length == 0) {
+    return f;
+  } else if (xs.length == 1) {
+    return mkApp(f, xs[0]);
+  } else {
+    return AP(mkApp(f, xs[0]), ...xs.slice(1));
+  }
+}
+
 export function mkNat(v:Nat) : Fan { return { t:Kind.NAT, v:v } }
 
 export function mkThunk(exe : (() => Fan)) : Fan {

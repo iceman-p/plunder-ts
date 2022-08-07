@@ -44,6 +44,13 @@ describe('testing new fanToRun', () => {
   });
 });
 
+describe('testing compiler integration', () => {
+  test('compile and run test (1 1 2)', () => {
+    let f = n.compile(0n, 1n, p.mkApp(p.mkApp(N(1n), N(1n)), N(2n)));
+    expect(f(N(30n))).toStrictEqual(N(30n));
+  });
+});
+
 // Local Variables:
 // typescript-indent-level: 2
 // End:
