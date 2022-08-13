@@ -18,9 +18,9 @@ function parse(e:ExportType) : Fan {
     if (typeof e === 'bigint') {
         f = N(e);
     } else if (Array.isArray(e)) {
-        f = F(arrayToExport(e));
+        f = arrayToExport(e);
     } else {
-        f = F(e as Fan);
+        f = e as Fan;
     }
     //console.log("parse: ", e, f);
     return f;
@@ -34,7 +34,7 @@ function arrayToExport(e:ExportType[]) : Fan {
         return parse(e[0]);
     } else {
         // [0, 1, 2, 3] -> (((0 1) 2) 3)
-        return F(A(F(arrayToExport(e.slice(0, -1))), parse(e.slice(-1))));
+        return A(arrayToExport(e.slice(0, -1)), parse(e.slice(-1)));
     }
 }
 
@@ -46,8 +46,16 @@ function run(e:ExportType) {
 function runpin(e:ExportType) {
 //    console.log("runpin: ", e);
     // TODO: This isn't entirely right since I'm just dropping the pin.
-    return F(parse(e));
-    //return F(p.mkApp(F(arrayToExport([0n, 0n, 1n])), parse(e)));
+    //return F(parse(e));
+
+    // We need to pull in the 
+    let raw = F(parse(e));
+    let arity = p.rawArity(raw);
+
+    let final = F(arrayToExport([0n, 0n, N(arity), raw]));
+    console.log("arity: ", arity, "raw: ", raw, "final: ", final);
+
+    return final
 }
 
 // Test the
@@ -84,6 +92,7 @@ describe('small sire tests', () => {
     let cdadr = runpin([0n, 491310376035n, 1n, [0n, [0n, 0n, 1n, [0n, [2n, cdr], 1n]], [0n, [0n, 0n, 1n, [0n, [2n, car], 1n]], [0n, [0n, 0n, 1n, [0n, [2n, cdr], 1n]], 1n]]]]);
     let cddar = runpin([0n, 491260240995n, 1n, [0n, [0n, 0n, 1n, [0n, [2n, cdr], 1n]], [0n, [0n, 0n, 1n, [0n, [2n, cdr], 1n]], [0n, [0n, 0n, 1n, [0n, [2n, car], 1n]], 1n]]]]);
     let cdddr = runpin([0n, 491310572643n, 1n, [0n, [0n, 0n, 1n, [0n, [2n, cdr], 1n]], [0n, [0n, 0n, 1n, [0n, [2n, cdr], 1n]], [0n, [0n, 0n, 1n, [0n, [2n, cdr], 1n]], 1n]]]]);
+    */
     let S = runpin([0n, 83n, 3n, [0n, [0n, 1n, 3n], [0n, 2n, 3n]]]);
     let K = runpin([0n, 75n, 2n, 1n]);
     let I = runpin([0n, 73n, 1n, 1n]);
@@ -91,7 +100,7 @@ describe('small sire tests', () => {
     let apply = runpin([0n, 521510350945n, 2n, [0n, 1n, 2n]]);
     let supply = runpin([0n, 133506649847155n, 2n, [0n, 2n, 1n]]);
     let compose = run([0n, 0n, 3n, [0n, [0n, [0n, [2n, B], 1n], 2n], 3n]]);
-*/
+
 
     let __true = run(1n);
     let __false = run(0n);
@@ -109,11 +118,40 @@ describe('small sire tests', () => {
     let ifNot = runpin([0n, 500083615337n, 3n, [0n, [0n, [0n, [0n, 0n, 3n, [0n, [0n, [0n, [2n, __if], 1n], 2n], 3n]], [0n, [0n, 0n, 1n, [0n, [2n, not], 1n]], 1n]], 2n], 3n]]);
 */
 
-    // OK, I have a
-    
-    test('expect', () => {
-        console.log(__if);
-//        expect(F(p.AP(__if, __true, N(5n), N(7n)))).toStrictEqual(5n);
-
+    test('parse nat', () => {
+        expect(parse(5n)).toStrictEqual(N(5n));
     });
+
+    test('parse app', () => {
+        expect(parse([2n, 5n])).toStrictEqual(A(N(2n), N(5n)));
+    });
+
+    test('parse long app', () => {
+        expect(parse([1n, 2n, 3n, 4n]))
+            .toStrictEqual(A(A(A(N(1n), N(2n)), N(3n)), N(4n)));
+    });
+
+    test('parse nesting', () => {
+        // toString() because of functions.
+        expect(parse([2n, [2n, 3n], [4n, 5n]]).toString())
+            .toStrictEqual(A(A(N(2n),
+                               A(N(2n), N(3n))),
+                             A(N(4n), N(5n))).toString());
+    });
+
+//     // OK, I have a
+//     test('K', () => {
+// //        expect(K).toStrictEqual(N(1n));
+// //        expect(F(p.mkApp(K, N(1n)))).toStrictEqual(N(1n));
+//                 expect(F(p.AP(K, N(1n), N(2n)))).toStrictEqual(N(1n));
+
+//         // let x = K.x(
+//         // expect(
+//     });
+
+    // test('expect', () => {
+    //     console.log(__if);
+    //     expect(F(p.AP(__if, __true, N(5n), N(7n)))).toStrictEqual(5n);
+
+    // });
 });

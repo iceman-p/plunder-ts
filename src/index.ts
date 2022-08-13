@@ -290,6 +290,8 @@ stk.concat(Array(` + maxStk + ` - rawargs.length));
   // We walk the tree to turn everything into a set of statements.
   let functext = preamble + walk(r);
 
+  console.log(functext);
+
   let fun = new Function("mkApp", "constants", "rawargs", functext) as
   ((p : (h : Fan, t : Fan) => Fan, consts: Fan[], args: Fan[]) => Fan);
 
