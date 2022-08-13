@@ -11,8 +11,6 @@ type ExportType =
     | ExportType[]
     | Fan
 
-// Hypothesis: raw incoming representation is going into the system. Why?
-
 function parse(e:ExportType) : Fan {
     let f : Fan;
     if (typeof e === 'bigint') {
@@ -22,43 +20,63 @@ function parse(e:ExportType) : Fan {
     } else {
         f = e as Fan;
     }
-    //console.log("parse: ", e, f);
     return f;
 }
 
 function arrayToExport(e:ExportType[]) : Fan {
-//    console.log("arrayToExport: ", e);
     if (e.length == 0) {
         throw "Impossible empty array in arrayToExport"
     } else if (e.length == 1) {
         return parse(e[0]);
     } else {
-        // [0, 1, 2, 3] -> (((0 1) 2) 3)
         return A(arrayToExport(e.slice(0, -1)), parse(e.slice(-1)));
     }
 }
 
 function run(e:ExportType) {
-//    console.log("run: ", e);
     return F(parse(e));
 }
 
 function runpin(e:ExportType) {
-//    console.log("runpin: ", e);
-    // TODO: This isn't entirely right since I'm just dropping the pin.
-    //return F(parse(e));
-
-    // We need to pull in the 
-    let raw = F(parse(e));
+    let raw = p.mkApp(N(2n), F(parse(e)));
     let arity = p.rawArity(raw);
 
+    // A pin simply calls its arguments. For f(a, b, c), it calls an inner
+    // values with (a, b, c). Therefore we have to build that here.
+    for (let i = 1n; i <= arity; ++i) {
+        raw = arrayToExport([0n, raw, N(i)]);
+    }
+
+    // Are these in the right order now?
     let final = F(arrayToExport([0n, 0n, N(arity), raw]));
     console.log("arity: ", arity, "raw: ", raw, "final: ", final);
 
     return final
 }
 
-// Test the
+describe('test the haskell sire integration', () => {
+    test('parse nat', () => {
+        expect(parse(5n)).toStrictEqual(N(5n));
+    });
+
+    test('parse app', () => {
+        expect(parse([2n, 5n])).toStrictEqual(A(N(2n), N(5n)));
+    });
+
+    test('parse long app', () => {
+        expect(parse([1n, 2n, 3n, 4n]))
+            .toStrictEqual(A(A(A(N(1n), N(2n)), N(3n)), N(4n)));
+    });
+
+    test('parse nesting', () => {
+        // toString() because of functions.
+        expect(parse([2n, [2n, 3n], [4n, 5n]]).toString())
+            .toStrictEqual(A(A(N(2n),
+                               A(N(2n), N(3n))),
+                             A(N(4n), N(5n))).toString());
+    });
+});
+
 describe('small sire tests', () => {
 /*
     let mkFun = run(0n);
@@ -118,40 +136,12 @@ describe('small sire tests', () => {
     let ifNot = runpin([0n, 500083615337n, 3n, [0n, [0n, [0n, [0n, 0n, 3n, [0n, [0n, [0n, [2n, __if], 1n], 2n], 3n]], [0n, [0n, 0n, 1n, [0n, [2n, not], 1n]], 1n]], 2n], 3n]]);
 */
 
-    test('parse nat', () => {
-        expect(parse(5n)).toStrictEqual(N(5n));
+    test('K', () => {
+        expect(F(p.AP(K, N(1n), N(2n)))).toStrictEqual(N(1n));
     });
 
-    test('parse app', () => {
-        expect(parse([2n, 5n])).toStrictEqual(A(N(2n), N(5n)));
+    test('__if', () => {
+        expect(F(p.AP(__if, __true, N(5n), N(7n)))).toStrictEqual(N(5n));
+        expect(F(p.AP(__if, __false, N(5n), N(7n)))).toStrictEqual(N(7n));
     });
-
-    test('parse long app', () => {
-        expect(parse([1n, 2n, 3n, 4n]))
-            .toStrictEqual(A(A(A(N(1n), N(2n)), N(3n)), N(4n)));
-    });
-
-    test('parse nesting', () => {
-        // toString() because of functions.
-        expect(parse([2n, [2n, 3n], [4n, 5n]]).toString())
-            .toStrictEqual(A(A(N(2n),
-                               A(N(2n), N(3n))),
-                             A(N(4n), N(5n))).toString());
-    });
-
-//     // OK, I have a
-//     test('K', () => {
-// //        expect(K).toStrictEqual(N(1n));
-// //        expect(F(p.mkApp(K, N(1n)))).toStrictEqual(N(1n));
-//                 expect(F(p.AP(K, N(1n), N(2n)))).toStrictEqual(N(1n));
-
-//         // let x = K.x(
-//         // expect(
-//     });
-
-    // test('expect', () => {
-    //     console.log(__if);
-    //     expect(F(p.AP(__if, __true, N(5n), N(7n)))).toStrictEqual(5n);
-
-    // });
 });

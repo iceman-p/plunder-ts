@@ -1,7 +1,7 @@
 import { Kind, Nat, Fan } from "../src/types"
 
 import * as p from '../src/index';
-import * as n from '../src/compiler';
+import * as n from '../src/index';
 
 function F(val:Fan)          : Fan { return p.force(val);      }
 function A(fun:Fan, arg:Fan) : Fan { return p.mkApp(fun, arg); }

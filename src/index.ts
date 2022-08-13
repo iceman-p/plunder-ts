@@ -1,4 +1,5 @@
 import { Kind, Nat, Fan } from "./types"
+import * as bigintConversion from 'bigint-conversion'
 
 export function E(val:Fan)          : Fan { return whnf(val);       }
 export function F(val:Fan)          : Fan { return force(val);      }
@@ -17,21 +18,9 @@ function subst(fun:Fan, args:Fan[]) : Fan {
   }
 
   if (fun.t == Kind.FUN) {
-    let params = [fun as Fan]
-    for (let i=0; i<args.length; i++) {
-      params.push(args[i]);
-    }
-
-    // I think the best calling convention here may be:
-    //
-    //     fun.x.apply(fun, params);
-    //
-    // With params still in reverse order.
-    //
-    //     function die (x) { return A(this, x) }
-    //     function K (y, x) { return x; }
-    //
-    return fun.x(params);
+    let params = args.reverse();
+    let ret = E(fun.x.apply(fun, params as any));
+    return ret;
   }
 
   if (fun.t == Kind.NAT) {
@@ -139,18 +128,6 @@ export function mkApp(f:Fan, x:Fan) : Fan {
   return { t:Kind.APP, f:f, x:x };
 }
 
-// Version 1 of trying to write this failed. Not burning more time on it, this
-// just does the silly recursive thing instead.
-export function AP(f:Fan, ...xs:Fan[]) : Fan {
-  if (xs.length == 0) {
-    return f;
-  } else if (xs.length == 1) {
-    return mkApp(f, xs[0]);
-  } else {
-    return AP(mkApp(f, xs[0]), ...xs.slice(1));
-  }
-}
-
 export function mkNat(v:Nat) : Fan { return { t:Kind.NAT, v:v } }
 
 export function mkThunk(exe : (() => Fan)) : Fan {
@@ -187,8 +164,7 @@ export enum RunKind {
   LOG,
   CNS,
   REF,
-  KAL,
-  LET
+  KAL
 }
 
 // Intermediate form for the compiler.
@@ -196,69 +172,168 @@ export enum RunKind {
 export type Run =
   | { t: RunKind.LOG, l: string, r: Run }
   | { t: RunKind.CNS, c: Fan }
-  | { t: RunKind.REF, r: number }
+  | { t: RunKind.REF, r: string }
   | { t: RunKind.KAL, f: Run, x: Run }
-  | { t: RunKind.LET, i: number, v: Run, f: Run }
 
-export type Prog = { arity: number,
-                     stkSz: number,
-                     prgm: (args : Fan[]) => Fan }
+// Collect all let statements in a function and hoist them to the top.
+export type TopRunLet = [string, Run];
 
-// Given a raw fan value, build out an intermediate Run structure describing
-// the steps to run, plus the maximum stack size that this needs.
-//
-// internal detail, exported for testing.
-export function fanToRun(maxArg : number, val : Fan) : [number, Run] {
-  whnf(val);
+// Version 1 of trying to write this failed. Not burning more time on it, this
+// just does the silly recursive thing instead.
+export function AP(f:Fan, ...xs:Fan[]) : Fan {
+  if (xs.length == 0) {
+    return f;
+  } else if (xs.length == 1) {
+    return mkApp(f, xs[0]);
+  } else {
+    return AP(mkApp(f, xs[0]), ...xs.slice(1));
+  }
+}
 
-  if (val.t == Kind.NAT && val.v <= BigInt(maxArg)) {
-    return [maxArg, {t: RunKind.REF, r: Number(val.v)}];
+// Build a new stateful funcion that returns the next in the series of ['a',
+// 'b', ..., 'z', 'aa', 'ab', ...]
+function mkGensym() : (() => string) {
+  let count = 0;
+  return function gensym() {
+    let n = count++;
+    let result = '';
+    do {
+      result = (n % 26 + 10).toString(36) + result;
+      n = Math.floor(n / 26) - 1;
+    } while (n >= 0)
+    return result;
+  }
+}
+
+export function fanToRun(argc : number,
+                         val : Fan) : [TopRunLet[], Run] {
+  // We'll need a unique name generator for all variables.
+  let gensym = mkGensym();
+
+  // Seed the references map with the arguments.
+  let refNames = ["this"];
+  for (let i = 0; i < argc; ++i) {
+    refNames.push(gensym());
   }
 
-  if (val.t == Kind.APP) {
-    whnf(val.f);
+  // We return all let statements at the top of the block.
+  let topLets : TopRunLet[] = [];
 
-    if (val.f.t == Kind.NAT) {
-      // If the toplevel `val` is `(2 x)`:
-      if (val.f.v == 2n) {
-        return [maxArg, {t: RunKind.CNS, c: val.x }]
-      }
-    } else if (val.f.t == Kind.APP) {
-      if (val.f.f.t == Kind.NAT) {
-        // If the toplevel `val` is `(0 f x)`:
-        if (val.f.f.v == 0n) {
-          let [fMax, fRun] = fanToRun(maxArg, val.f.x);
-          let [xMax, xRun] = fanToRun(maxArg, val.x);
-          return [Math.max(fMax, xMax),
-                  {t: RunKind.KAL, f:fRun, x:xRun}];
+  function recurse(refs : string[], val : Fan) : Run {
+    whnf(val);
+
+    if (val.t == Kind.NAT && Number(val.v) < refs.length) {
+      return {t: RunKind.REF, r: refs[Number(val.v)]};
+    }
+
+    if (val.t == Kind.APP) {
+      whnf(val.f);
+
+      if (val.f.t == Kind.NAT) {
+        // If the toplevel `val` is `(2 x)`:
+        if (val.f.v == 2n) {
+          return {t: RunKind.CNS, c: val.x };
         }
-        // If the toplevel `val` is `(1 v b)`:
-        if (val.f.f.v == 1n) {
-          let [vMax, vRun] = fanToRun(maxArg + 1, val.f.x);
-          let [bMax, bRun] = fanToRun(maxArg + 1, val.x);
-          return [Math.max(vMax, bMax),
-                  { t: RunKind.LET, i: maxArg + 1, v:vRun, f:bRun }];
+      } else if (val.f.t == Kind.APP) {
+        if (val.f.f.t == Kind.NAT) {
+          // If the toplevel `val` is `(0 f x)`:
+          if (val.f.f.v == 0n) {
+            return {t: RunKind.KAL,
+                    f: recurse(refs, val.f.x),
+                    x: recurse(refs, val.x)};
+          }
+          // If the toplevel `val` is `(1 v b)`:
+          if (val.f.f.v == 1n) {
+            let name = gensym();
+            let pushedRefs = [...refs, name];
+
+            let vRun = recurse(pushedRefs, val.f.x);
+            topLets.push([name, vRun]);
+
+            return recurse(pushedRefs, val.x);
+          }
         }
       }
     }
+
+    return {t: RunKind.CNS, c: val};
   }
 
-  return [maxArg, {t: RunKind.CNS, c: val }]
+  let run = recurse(refNames, val);
+  return [topLets, run];
 }
 
-// Given the Run structure from `fanToRun`, translate the Run structure into
-// autogenerated javascript to pass to the interpreter, which should hopefully
-// JIT it for us if we call it enough.
-//
-export function compileRunToFunction(maxStk : number, r : Run)
-: (args : Fan[]) => Fan
-{
-  let preamble = `
-let stk = [...rawargs];
-if (` + maxStk + ` > stk.length) {
-stk.concat(Array(` + maxStk + ` - rawargs.length));
+export enum OptKind {
+  LOG,
+  CNS,
+  REF,
+  KAL
 }
-`;
+
+// Intermediate form for the compiler.
+//
+export type Opt =
+  | { t: OptKind.LOG, l: string, r: Opt }
+  | { t: OptKind.CNS, c: Fan }
+  | { t: OptKind.REF, r: string }
+  | { t: OptKind.KAL, f: Opt[] }
+
+// Collect all let statements in a function and hoist them to the top.
+export type TopOptLet = [string, Opt];
+
+// Takes the raw Run
+function optimize(r : Run) : Opt {
+  switch (r.t) {
+    case RunKind.LOG:
+      return { t: OptKind.LOG, l: r.l, r: optimize(r.r) }
+    case RunKind.CNS:
+      return { t: OptKind.CNS, c: r.c };
+    case RunKind.REF:
+      return { t: OptKind.REF, r: r.r };
+    case RunKind.KAL:
+      let stack = [optimize(r.x)];
+      let next = r.f;
+      while (next.t == RunKind.KAL) {
+        stack.push(optimize(next.x));
+        next = next.f;
+      }
+      stack.push(optimize(next));
+      return { t: OptKind.KAL, f:stack.reverse() }
+  }
+}
+
+//
+function runToFunctionText(constants : Fan[],
+                           opt : Opt) : string {
+  switch (opt.t) {
+    case OptKind.LOG:
+      let escaped = JSON.stringify(opt.l);
+      return "(function(){console.log(" + escaped + ");\n" +
+        runToFunctionText(constants, opt.r) +
+        "})()";
+    case OptKind.CNS:
+      let idx = constants.length
+      constants.push(opt.c);
+      return "constants[" + idx + "]";
+    case OptKind.REF:
+      return opt.r;
+    case OptKind.KAL:
+      let f : string[] = ["AP("];
+      let strs = opt.f.map(function (x) {
+        return runToFunctionText(constants, x);
+      });
+      f.push(strs.join());
+      f.push(")");
+      return f.join('');
+  }
+}
+
+// Returns a function meant to be called with `apply(this, args)`.
+export function optToFunction(name : string,
+                              argc : number,
+                              lets : TopOptLet[],
+                              run : Opt) {
+  let gensym = mkGensym();
 
   // Constant values need to be passed into the function instead of being in
   // the text because they might be thunks and their evaluation should cause
@@ -266,43 +341,92 @@ stk.concat(Array(` + maxStk + ` - rawargs.length));
   // large values and textifying them could be very expensive.
   let constants : Fan[] = [];
 
-  function walk(r : Run) : string {
-    switch (r.t) {
-      case RunKind.LOG:
-        let escaped = JSON.stringify(r.l);
-        return "console.log(" + escaped + ");\n" + walk(r.r);
-      case RunKind.CNS:
-        let idx = constants.length
-        constants.push(r.c);
-        return "return constants[" + idx + "];";
-      case RunKind.REF:
-        return "return stk[" + r.r + "];"
-      case RunKind.KAL:
-        return "return mkApp((function(){\n" + walk(r.f) +
-          "\n})(), (function(){\n" + walk(r.x) + "\n})());";
-      case RunKind.LET:
-        return "stk[" + r.i + "] = (function(){\n" + walk(r.v) +
-          "\n})();\n" +
-          walk(r.f);
+  // We produce the inner text of a function which given the environment,
+  // returns a named function which uses our apply() based calling
+  // convention. We set the name if appropriate so it shows up in devtools.
+  let f : string[] = ["return function " + name + "("];
+  let args = []
+  for (let i = 0; i < argc; ++i) {
+    args.push(gensym());
+  }
+//  args.reverse(); // Arguments are passed in in reverse order.
+  f.push(args.join());
+  f.push(") {\n");
+
+  for (let [letName, letVal] of lets) {
+    f.push("const " + letName + " = ");
+    f.push(runToFunctionText(constants, letVal));
+    f.push(";\n");
+  }
+
+  f.push("return ");
+  f.push(runToFunctionText(constants, run));
+  f.push(";\n");
+
+  f.push("}");
+
+  console.log(f.join(''));
+
+  let builder = new Function("AP", "constants", f.join('')) as any;
+  // TODO: Actually figuring out the type here is wack, and I bet you can't do
+  // it without dependent types on `argc`?
+  return builder(AP, constants);
+}
+
+let reservedWords = new Set<string>([
+  "abstract", "arguments", "await", "boolean", "break", "byte", "case",
+  "catch", "char", "class", "const", "continue", "debugger", "default",
+  "delete", "do", "double", "else", "enum", "eval", "export", "extends",
+  "false", "final", "finally", "float", "for", "function", "goto", "if",
+  "implements", "import", "in", "instanceof", "int", "interface", "let",
+  "long", "native", "new", "null", "package", "private", "protected",
+  "public", "return", "short", "static", "super", "switch", "synchronized",
+  "this", "throw", "throws", "transient", "true", "try", "typeof", "var",
+  "void", "volatile", "while", "with", "yield"]);
+
+// Create a valid javascripty name for the function. This is either the law
+// name if printable, or just "_nameAsNumber".
+export function buildName(name : bigint) : string {
+  let strName = "";
+  try {
+    let converted = bigintConversion.bigintToText(name);
+    converted = converted.split("").reverse().join("");
+    if (/^[A-Za-z0-9]+$/.test(converted)) {
+      strName = converted;
     }
+  } catch {
+    strName = "";
   }
 
-  // We walk the tree to turn everything into a set of statements.
-  let functext = preamble + walk(r);
-
-  console.log(functext);
-
-  let fun = new Function("mkApp", "constants", "rawargs", functext) as
-  ((p : (h : Fan, t : Fan) => Fan, consts: Fan[], args: Fan[]) => Fan);
-
-  return function(args: Fan[]) : Fan {
-    return fun(mkApp, constants, args);
+  if (strName == "") {
+    strName = "_" + name.toString();
   }
+
+  // If the name is a javascript reserved word, prefix it with a "_".
+  if (reservedWords.has(strName)) {
+    strName = "_" + strName;
+  }
+
+  return strName;
+}
+
+export function compile(name : bigint, args : bigint, fanBody : Fan)
+{
+  let argc = Number(args);
+  let [toprunlet, runBody] = fanToRun(argc, fanBody);
+
+  let optBody = optimize(runBody);
+  let topOptLet = toprunlet.map(
+    function (a : TopRunLet) : TopOptLet {
+      let [name, run] = a;
+      return [name, optimize(run)] });
+
+  let strName = buildName(name);
+  return optToFunction(strName, argc, topOptLet, optBody);
 }
 
 export function mkFun(name : bigint, args : bigint, body : Fan) : Fan {
-  let [stkSize, run] = fanToRun(Number(args), body);
-  let fun = compileRunToFunction(stkSize, run);
+  let fun = compile(name, args, body);
   if (args == 0n) {
     let execu = () => { throw "Infinite Loop"; }
     let thunk = {t: Kind.THUNK, x:execu} as Fan
