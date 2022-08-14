@@ -4,11 +4,12 @@ import * as p from '../src/index';
 import * as s from '../src/sire';
 import { sire } from '../src/sire';
 
+function E(val:Fan)          : Fan { return p.whnf(val);       }
 function F(val:Fan)          : Fan { return p.force(val);      }
 function A(fun:Fan, arg:Fan) : Fan { return p.mkApp(fun, arg); }
 function N(nat:Nat)          : Fan { return p.mkNat(nat);      }
 
-function R(...i:s.ExportType[]) : Fan { return F(s.arrayToExport(i)); }
+function R(...i:s.ExportType[]) : Fan { return E(s.arrayToExport(i)); }
 
 describe('test the haskell sire integration', () => {
     test('parse nat', () => {
@@ -34,19 +35,25 @@ describe('test the haskell sire integration', () => {
 });
 
 describe('small sire tests', () => {
-    test('K', () => {
-   //     console.log(sire);
-        expect(F(p.AP(sire.K, N(1n), N(2n)))).toStrictEqual(N(1n));
-    });
+    // All these tests have the same format: name, input to evaluate, output to
+    // check.
+    let eq = function (name : string, i:s.ExportType[], o:s.ExportType) {
+        test(name, () => {
+            expect(E(s.arrayToExport(i))).toStrictEqual(s.parse(o));
+        });
+    }
 
-    test('__if', () => {
-        expect(R(sire.__if, sire.__true, 5n, 7n))
-            .toStrictEqual(N(5n));
-        expect(R(sire.__if, sire.__false, 5n, 7n))
-            .toStrictEqual(N(7n));
-    });
+    eq('isFun isFun', [sire.isFun, sire.isFun], 1n);
+    eq('isFun 5', [sire.isFun, 5n], 0n);
+    eq('isApp (add 1)', [sire.isApp, [sire.add, 1n]], 1n);
+    eq('isApp 3', [sire.isApp, 3n], 0n);
+    eq('isNat 3n', [sire.isNat, 3n], 1n);
+    eq('isNat add', [sire.isNat, sire.add], 0n);
 
-    test('min', () => {
-        expect(R(sire.min, 41n, 34n)).toStrictEqual(N(34n));
-    });
+    eq('K', [sire.K, 1n, 2n], 1n);
+    eq('__if __true', [sire.__if, sire.__true, 5n, 7n], 5n);
+    eq('__if __false', [sire.__if, sire.__false, 5n, 7n], 7n);
+    eq('dec', [sire.dec, 81n], 80n);
+    eq('mul', [sire.mul, 2n, 3n], 6n);
+    eq('min', [sire.min, 41n, 34n], 34n);
 });

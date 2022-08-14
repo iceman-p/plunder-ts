@@ -40,18 +40,19 @@ function run(debug:string, e:ExportType) {
 
 function runpin(debug:string, e:ExportType) {
     console.log("runpin(" + debug + ")");
-    let raw = p.mkApp(N(2n), F(parse(e)));
+    let raw = F(parse(e));
+    let wrap = p.mkApp(N(2n), raw);
     let arity = p.rawArity(raw);
 
     // A pin simply calls its arguments. For f(a, b, c), it calls an inner
     // values with (a, b, c). Therefore we have to build that here.
     for (let i = 1n; i <= arity; ++i) {
-        raw = arrayToExport([0n, raw, N(i)]);
+        wrap = arrayToExport([0n, wrap, N(i)]);
     }
 
     // Are these in the right order now?
-    let final = F(arrayToExport([0n, 0n, N(arity), raw]));
-    console.log("arity: ", arity, "raw: ", raw, "final: ", final);
+    let final = F(arrayToExport([0n, 0n, N(arity), wrap]));
+    // console.log("arity: ", arity, "raw: ", raw, "wrap: ", wrap, "final: ", final);
 
     return final
 }

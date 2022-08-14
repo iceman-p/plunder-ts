@@ -145,15 +145,11 @@ export function mkThunk(exe : (() => Fan)) : Fan {
   return (t as Fan);
 }
 
-// Non-exported check to ensure a Fan is forced. This is not the "public"
-// force() function that does full forcing, but a thing used to force the
-// current top layer.
-function whnf(f : Fan) : Fan {
-  if (f.t == Kind.THUNK) {
+// Check to ensure a Fan is forced. This is not the "public" force() function
+// that does full forcing, but a thing used to force the current top layer.
+export function whnf(f : Fan) : Fan {
+  while (f.t == Kind.THUNK) {
     f.x();
-  }
-  if (f.t == Kind.THUNK) {
-    throw "NO WHNF AFTER EVAL";
   }
   return f;
 }
