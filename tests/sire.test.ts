@@ -53,7 +53,16 @@ describe('small sire tests', () => {
     eq('K', [sire.K, 1n, 2n], 1n);
     eq('__if __true', [sire.__if, sire.__true, 5n, 7n], 5n);
     eq('__if __false', [sire.__if, sire.__false, 5n, 7n], 7n);
+    eq('not 0', [sire.not, 0n], 1n);
+    eq('not 1', [sire.not, 1n], 0n);
+
     eq('dec', [sire.dec, 81n], 80n);
     eq('mul', [sire.mul, 2n, 3n], 6n);
     eq('min', [sire.min, 41n, 34n], 34n);
+
+    eq('met 0', [sire.met, 0n], 0n);
+    eq('met 1', [sire.met, 1n], 1n);
+    eq('met 5', [sire.met, 5n], 3n);
+    // RangeError: Maximum call stack size exceeded
+    //eq('met 512321', [sire.met, 512321n], 19n);
 });
