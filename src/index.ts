@@ -12,6 +12,8 @@ export function N(nat:Nat)          : Fan { return mkNat(nat);      }
 
 function datArity(dat:Dat) : Nat {
   switch (dat.t) {
+    case DatKind.PIN:
+      return rawArity(dat.i);
     case DatKind.ROW:
       return 1n;
     case DatKind.COW:
@@ -21,6 +23,10 @@ function datArity(dat:Dat) : Nat {
 
 function datEval(dat:Dat, args:Fan[]) : Fan {
   switch (dat.t) {
+    case DatKind.PIN:
+      // TODO: In the longer run, don't do this. However, just calling this
+      // works for now.
+      return subst(dat.i, args);
     case DatKind.ROW:
       return { t: FanKind.DAT, d:{ t:DatKind.COW, z:BigInt(args.length) } };
     case DatKind.COW:
@@ -28,10 +34,23 @@ function datEval(dat:Dat, args:Fan[]) : Fan {
   }
 }
 
+function rebuildPinBody(args:bigint, i:Fan) : Fan {
+  if (args == 0n) {
+    return A(N(2n), i);
+  } else {
+    return A(A(N(0n), rebuildPinBody(args - 1n, i)), N(args));
+  }
+}
+
 function datWut(dat:Dat,
                 mkRul:((name:bigint, arity:bigint, body:Fan) => Fan),
                 mkCel:((head:Fan, tail:Fan) => Fan)) : Fan {
   switch (dat.t) {
+    case DatKind.PIN:
+      // PIN p -> rul (LN 0) args (pinBody args $ pinItem p)
+      //            where args = (trueArity $ pinItem p)
+      let args = trueArity(dat.i);
+      return mkRul(0n, args, rebuildPinBody(args, dat.i));
     case DatKind.COW:
       return mkRul(0n, dat.z + 1n, N(0n));
     case DatKind.ROW:
@@ -119,6 +138,14 @@ function subst(fun:Fan, args:Fan[]) : Fan {
 
   throw 'impossible'; // THUNK or APP
   return N(0n);
+}
+
+export function trueArity(x:Fan) : Nat {
+  if (x.t == FanKind.DAT && x.d.t == DatKind.COW) {
+    return x.d.z + 1n;
+  }
+
+  return rawArity(x);
 }
 
 /*
@@ -478,6 +505,32 @@ function isNatEq(f : Fan, i : bigint) {
   return f.t == FanKind.NAT && f.v == i;
 }
 
+function matchPin(n:bigint, a:{ f:Fan, x:Fan } ) : Fan | null {
+  while (true) {
+    // matchPin 0 (APP (NAT 2) x)                             = Just x
+    if (n == 0n) {
+      if (isNatEq(a.f, 2n)) {
+        return { t:FanKind.DAT, d:{ t:DatKind.PIN, i:a.x } };
+      } else {
+        return null;
+      }
+    }
+
+    //            a    a.f  a.f.f   a.f.x      a.x
+    // matchPin n (APP (APP (NAT 0) (PLN _ x)) (AT m)) | n==m = matchPin (n-1) x
+    if (isNatEq(a.x, n) && // n==m
+        a.f.t == FanKind.APP &&
+        isNatEq(a.f.f, 0n) &&
+        a.f.x.t == FanKind.APP) {
+      n = n - 1n;
+      a = a.f.x;
+      continue;
+    }
+
+    return null;
+  }
+}
+
 export function mkFun(name : bigint, args : bigint, body : Fan) : Fan {
   // Step 1: Try to jet match
   if (name == 0n) {
@@ -487,9 +540,15 @@ export function mkFun(name : bigint, args : bigint, body : Fan) : Fan {
       } else {
         return { t:FanKind.DAT, d:{ t:DatKind.COW, z:(args - 1n) } };
       }
+    } else if (body.t == FanKind.APP) {
+      // v1 of pin handling: pins work by just wrapping their item.
+      let m = matchPin(args, body);
+      if (m !== null) {
+        return m;
+      }
+      // v2 exec
+      // v3 some sort of matching.
     }
-    // OK, this is a minimal jet matching of data jets. But next up, I have to
-    // deal with calling these values.
   }
 
   // Fallback to compiling the body of the law.

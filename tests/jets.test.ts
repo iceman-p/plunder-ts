@@ -38,6 +38,15 @@ describe('test data jet matching', () => {
         mkRow([N(1n), N(2n), N(3n), N(4n)]));
     });
   });
+
+  describe('pin tests', () => {
+    test('isPin cow', () => {
+      expect(R(sire.isPin, sire.cow)).toStrictEqual(N(1n));
+    });
+    test('isPin | cdr cow', () => {
+      expect(R(sire.isPin, R(sire.cdr, sire.cow))).toStrictEqual(N(0n));
+    });
+  });
 });
 
 // Local Variables:

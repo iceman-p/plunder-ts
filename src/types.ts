@@ -8,6 +8,7 @@ export enum FanKind {
 }
 
 export enum DatKind {
+  PIN,
   ROW,
   TAB,
   BAR,
@@ -25,8 +26,11 @@ export type Fan =
   | { t: FanKind.DAT; d:Dat }
 
 export type Dat =
+  | { t: DatKind.PIN; i:Fan }
   | { t: DatKind.ROW; r:Fan[] }
   | { t: DatKind.COW; z:Nat }
+
+
 
 // Local Variables:
 // typescript-indent-level: 2
