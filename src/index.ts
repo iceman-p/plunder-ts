@@ -1,4 +1,4 @@
-import { Kind, Nat, Fan } from "./types"
+import { FanKind, DatKind, Nat, Fan, Dat } from "./types"
 import * as bigintConversion from 'bigint-conversion'
 
 export function E(val:Fan)          : Fan { return whnf(val);       }
@@ -6,24 +6,64 @@ export function F(val:Fan)          : Fan { return force(val);      }
 export function A(fun:Fan, arg:Fan) : Fan { return mkApp(fun, arg); }
 export function N(nat:Nat)          : Fan { return mkNat(nat);      }
 
+// -----------------------------------------------------------------------
+
+// Dat implementation
+
+function datArity(dat:Dat) : Nat {
+  switch (dat.t) {
+    case DatKind.ROW:
+      return 1n;
+    case DatKind.COW:
+      return dat.z;
+  }
+}
+
+function datEval(dat:Dat, args:Fan[]) : Fan {
+  switch (dat.t) {
+    case DatKind.ROW:
+      return { t: FanKind.DAT, d:{ t:DatKind.COW, z:BigInt(args.length) } };
+    case DatKind.COW:
+      return { t: FanKind.DAT, d:{ t:DatKind.ROW, r:args.reverse() } };
+  }
+}
+
+function datWut(dat:Dat,
+                mkRul:((name:bigint, arity:bigint, body:Fan) => Fan),
+                mkCel:((head:Fan, tail:Fan) => Fan)) : Fan {
+  switch (dat.t) {
+    case DatKind.COW:
+      return mkRul(0n, dat.z + 1n, N(0n));
+    case DatKind.ROW:
+      // TODO: In what order do arguments get stored?
+      throw "todo: datWut row"
+  }
+}
+
+// -----------------------------------------------------------------------
+
 /*
   Given (f, [x]) where (f ... x) is known to be saturated:
 
   Collect all the arguments and execute `f`.
 */
 function subst(fun:Fan, args:Fan[]) : Fan {
-  while (fun.t == Kind.APP) {
+  while (fun.t == FanKind.APP) {
     args.push(fun.x);
     fun = fun.f;
   }
 
-  if (fun.t == Kind.FUN) {
+  if (fun.t == FanKind.FUN) {
     let params = args.reverse();
     let ret = E(fun.x.apply(fun, params as any));
     return ret;
   }
 
-  if (fun.t == Kind.NAT) {
+  if (fun.t == FanKind.DAT) {
+    return datEval(fun.d, args);
+  }
+
+  if (fun.t == FanKind.NAT) {
     switch(fun.v) {
       case 0n: {
         let n = args[2];
@@ -39,13 +79,21 @@ function subst(fun:Fan, args:Fan[]) : Fan {
 
         E(x);
         switch (x.t) {
-          case Kind.FUN:
+          case FanKind.FUN:
             return E(A(A(A(f, N(x.n)), N(x.a)), x.b));
-          case Kind.APP:
+          case FanKind.APP:
             return E(A(A(a, x.f), x.x));
-          case Kind.NAT:
+          case FanKind.NAT:
             return E(A(n, x));
-          case Kind.THUNK:
+          case FanKind.DAT:
+            return E(datWut(
+              x.d,
+              function goLaw(nm, ar, bd) {
+                return E(A(A(A(f, N(nm)), N(ar)), bd));
+              },
+              function goApp(g : Fan, y : Fan) : Fan { return A(A(a, g), y); }
+            ));
+          case FanKind.THUNK:
             throw "Impossible to have a thunk here.";
         }
       }
@@ -80,13 +128,16 @@ function subst(fun:Fan, args:Fan[]) : Fan {
 export function rawArity(x:Fan) : Nat {
   var depth = 0n;
   while (true) {
-    if (x.t == Kind.APP) {
+    if (x.t == FanKind.APP) {
       let head = x.f;
       x = head;
       depth++;
       continue;
     }
-    if (x.t == Kind.NAT) {
+    if (x.t == FanKind.DAT) {
+      return datArity(x.d) - depth;
+    }
+    if (x.t == FanKind.NAT) {
       switch (x.v) {
         case 0n: return (3n - depth);
         case 1n: return (4n - depth);
@@ -94,7 +145,7 @@ export function rawArity(x:Fan) : Nat {
         default: return (1n - depth);
       }
     }
-    if (x.t == Kind.FUN) {
+    if (x.t == FanKind.FUN) {
       return (x.a - depth);
     }
     return 0n;
@@ -110,10 +161,10 @@ export function rawArity(x:Fan) : Nat {
   at all.
 */
 export function mkApp(f:Fan, x:Fan) : Fan {
-  if (f.t == Kind.THUNK) {
+  if (f.t == FanKind.THUNK) {
     return mkThunk(function() {
       let res = mkApp(E(f),x);
-      if (res.t == Kind.THUNK) { res.x(); }
+      if (res.t == FanKind.THUNK) { res.x(); }
       return res;
     });
   }
@@ -125,13 +176,13 @@ export function mkApp(f:Fan, x:Fan) : Fan {
     });
   }
 
-  return { t:Kind.APP, f:f, x:x };
+  return { t:FanKind.APP, f:f, x:x };
 }
 
-export function mkNat(v:Nat) : Fan { return { t:Kind.NAT, v:v } }
+export function mkNat(v:Nat) : Fan { return { t:FanKind.NAT, v:v } }
 
 export function mkThunk(exe : (() => Fan)) : Fan {
-  let t = { t: Kind.THUNK, x: function () {} }
+  let t = { t: FanKind.THUNK, x: function () {} }
 
   t.x = function () {
     let v = exe();
@@ -148,7 +199,7 @@ export function mkThunk(exe : (() => Fan)) : Fan {
 // Check to ensure a Fan is forced. This is not the "public" force() function
 // that does full forcing, but a thing used to force the current top layer.
 export function whnf(f : Fan) : Fan {
-  while (f.t == Kind.THUNK) {
+  while (f.t == FanKind.THUNK) {
     f.x();
   }
   return f;
@@ -218,20 +269,20 @@ export function fanToRun(argc : number,
   function recurse(refs : string[], val : Fan) : Run {
     whnf(val);
 
-    if (val.t == Kind.NAT && Number(val.v) < refs.length) {
+    if (val.t == FanKind.NAT && Number(val.v) < refs.length) {
       return {t: RunKind.REF, r: refs[Number(val.v)]};
     }
 
-    if (val.t == Kind.APP) {
+    if (val.t == FanKind.APP) {
       whnf(val.f);
 
-      if (val.f.t == Kind.NAT) {
+      if (val.f.t == FanKind.NAT) {
         // If the toplevel `val` is `(2 x)`:
         if (val.f.v == 2n) {
           return {t: RunKind.CNS, c: val.x };
         }
-      } else if (val.f.t == Kind.APP) {
-        if (val.f.f.t == Kind.NAT) {
+      } else if (val.f.t == FanKind.APP) {
+        if (val.f.f.t == FanKind.NAT) {
           // If the toplevel `val` is `(0 f x)`:
           if (val.f.f.v == 0n) {
             return {t: RunKind.KAL,
@@ -308,6 +359,8 @@ function runToFunctionText(constants : Fan[],
         runToFunctionText(constants, opt.r) +
         "})()";
     case OptKind.CNS:
+      // Only start trying to inline nat constants once raw nats are supported
+      // in Fan.
       let idx = constants.length
       constants.push(opt.c);
       return "constants[" + idx + "]";
@@ -361,7 +414,7 @@ export function optToFunction(name : string,
 
   f.push("}");
 
-  console.log(f.join(''));
+//  console.log(f.join(''));
 
   let builder = new Function("AP", "constants", f.join('')) as any;
   // TODO: Actually figuring out the type here is wack, and I bet you can't do
@@ -421,14 +474,32 @@ export function compile(name : bigint, args : bigint, fanBody : Fan)
   return optToFunction(strName, argc, topOptLet, optBody);
 }
 
+function isNatEq(f : Fan, i : bigint) {
+  return f.t == FanKind.NAT && f.v == i;
+}
+
 export function mkFun(name : bigint, args : bigint, body : Fan) : Fan {
+  // Step 1: Try to jet match
+  if (name == 0n) {
+    if (isNatEq(body, 0n)) {
+      if (args == 1n) {
+        return { t:FanKind.DAT, d:{ t:DatKind.ROW, r:new Array<Fan>() } };
+      } else {
+        return { t:FanKind.DAT, d:{ t:DatKind.COW, z:(args - 1n) } };
+      }
+    }
+    // OK, this is a minimal jet matching of data jets. But next up, I have to
+    // deal with calling these values.
+  }
+
+  // Fallback to compiling the body of the law.
   let fun = compile(name, args, body);
   if (args == 0n) {
     let execu = () => { throw "Infinite Loop"; }
-    let thunk = {t: Kind.THUNK, x:execu} as Fan
+    let thunk = {t: FanKind.THUNK, x:execu} as Fan
     return fun([thunk]);
   } else {
-    return {t: Kind.FUN, n:name, a:args, b: body, x: fun};
+    return {t: FanKind.FUN, n:name, a:args, b: body, x: fun};
   }
 }
 
@@ -437,7 +508,7 @@ export function mkFun(name : bigint, args : bigint, body : Fan) : Fan {
 export function force(val : Fan) : Fan {
   whnf(val);
 
-  if (val.t == Kind.APP) {
+  if (val.t == FanKind.APP) {
     force(val.f);
     force(val.x);
   }
@@ -447,7 +518,7 @@ export function force(val : Fan) : Fan {
 function valNat(val : Fan) : Nat {
   whnf(val);
 
-  if (val.t == Kind.NAT) {
+  if (val.t == FanKind.NAT) {
     return val.v;
   } else {
     return 0n;

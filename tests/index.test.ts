@@ -1,4 +1,4 @@
-import { Kind, Nat, Fan } from "../src/types"
+import { FanKind, Nat, Fan } from "../src/types"
 
 import * as p from '../src/index';
 

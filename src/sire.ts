@@ -1,4 +1,4 @@
-import { Kind, Nat, Fan } from "../src/types"
+import { FanKind, Nat, Fan } from "../src/types"
 
 import * as p from '../src/index';
 
@@ -34,12 +34,12 @@ export function arrayToExport(e:ExportType[]) : Fan {
 }
 
 function run(debug:string, e:ExportType) {
-    console.log("run(" + debug + ")");
+//    console.log("run(" + debug + ")");
     return F(parse(e));
 }
 
 function runpin(debug:string, e:ExportType) {
-    console.log("runpin(" + debug + ")");
+//    console.log("runpin(" + debug + ")");
     let raw = F(parse(e));
     let wrap = p.mkApp(N(2n), raw);
     let arity = p.rawArity(raw);
