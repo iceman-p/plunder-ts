@@ -1,4 +1,4 @@
-import { FanKind, DatKind, Nat, Fan, Dat } from "./types"
+import { Fun, FanKind, DatKind, Nat, Fan, Dat } from "./types"
 import * as bigintConversion from 'bigint-conversion'
 
 export function E(val:Fan)          : Fan { return whnf(val);       }
@@ -24,9 +24,8 @@ function datArity(dat:Dat) : Nat {
 function datEval(dat:Dat, args:Fan[]) : Fan {
   switch (dat.t) {
     case DatKind.PIN:
-      // TODO: In the longer run, don't do this. However, just calling this
-      // works for now.
-      return subst(dat.i, args);
+      let params = args.reverse();
+      return callFun(dat.x, dat.i, params);
     case DatKind.ROW:
       return { t: FanKind.DAT, d:{ t:DatKind.COW, z:BigInt(args.length) } };
     case DatKind.COW:
@@ -61,6 +60,10 @@ function datWut(dat:Dat,
 
 // -----------------------------------------------------------------------
 
+function callFun(f:Fun, _this:Fan, args:Fan[]) : Fan {
+  return E(f.apply(_this, args as any) as Fan);
+}
+
 /*
   Given (f, [x]) where (f ... x) is known to be saturated:
 
@@ -74,7 +77,7 @@ function subst(fun:Fan, args:Fan[]) : Fan {
 
   if (fun.t == FanKind.FUN) {
     let params = args.reverse();
-    let ret = E(fun.x.apply(fun, params as any));
+    let ret = callFun(fun.x, fun, params);
     return ret;
   }
 
@@ -441,7 +444,7 @@ export function optToFunction(name : string,
 
   f.push("}");
 
-//  console.log(f.join(''));
+  // console.log(f.join(''));
 
   let builder = new Function("AP", "constants", f.join('')) as any;
   // TODO: Actually figuring out the type here is wack, and I bet you can't do
@@ -505,12 +508,21 @@ function isNatEq(f : Fan, i : bigint) {
   return f.t == FanKind.NAT && f.v == i;
 }
 
-function matchPin(n:bigint, a:{ f:Fan, x:Fan } ) : Fan | null {
+function matchPinFromFan(n:bigint, a:{ f:Fan, x:Fan } )
+: { t: FanKind.DAT; d: { t:DatKind.PIN; i:Fan; x:(f : Fan[]) => Fan }} | null
+{
   while (true) {
     // matchPin 0 (APP (NAT 2) x)                             = Just x
     if (n == 0n) {
       if (isNatEq(a.f, 2n)) {
-        return { t:FanKind.DAT, d:{ t:DatKind.PIN, i:a.x } };
+        if (a.x.t == FanKind.FUN) {
+          return { t:FanKind.DAT, d:{ t:DatKind.PIN, i:a.x, x:a.x.x } };
+        } else {
+          return { t:FanKind.DAT,
+                   d:{ t:DatKind.PIN, i:a.x,
+                       x: ((f:Fan[]) => { return AP(a.x, ...f); })
+                     } };
+        }
       } else {
         return null;
       }
@@ -531,6 +543,37 @@ function matchPin(n:bigint, a:{ f:Fan, x:Fan } ) : Fan | null {
   }
 }
 
+// When this is a well known jet body, return the jet function that overrides
+// the normal execution.
+function matchJetPin(body : Fan) : Fun | null
+{
+  if (body.t != FanKind.FUN) {
+    return null;
+  }
+
+  let bodyName = bigintConversion.bigintToText(body.n)
+    .split("").reverse().join("");
+
+  if (bodyName == "dec") {
+    return function dec(a : Fan) {
+      console.log("dec jet");
+      let n = valNat(a);
+      if (n == 0n) {
+        return N(0n);
+      } else {
+        return N(n - 1n);
+      }
+    }
+  } else if (bodyName == "add") {
+    return function add(a : Fan, b : Fan) {
+      console.log("jetted add");
+      return N(valNat(a) + valNat(b));
+    }
+  }
+
+  return null;
+}
+
 export function mkFun(name : bigint, args : bigint, body : Fan) : Fan {
   // Step 1: Try to jet match
   if (name == 0n) {
@@ -541,13 +584,15 @@ export function mkFun(name : bigint, args : bigint, body : Fan) : Fan {
         return { t:FanKind.DAT, d:{ t:DatKind.COW, z:(args - 1n) } };
       }
     } else if (body.t == FanKind.APP) {
-      // v1 of pin handling: pins work by just wrapping their item.
-      let m = matchPin(args, body);
+      let m = matchPinFromFan(args, body);
       if (m !== null) {
+        let jetFun = matchJetPin(m.d.i);
+        if (jetFun !== null) {
+          m.d.x = jetFun;
+        }
+
         return m;
       }
-      // v2 exec
-      // v3 some sort of matching.
     }
   }
 

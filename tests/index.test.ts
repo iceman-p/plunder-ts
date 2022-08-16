@@ -39,14 +39,8 @@ describe('testing nat evaluation', () => {
 
 describe('compiler tests', () => {
   describe("function execution tests", () => {
-    test('test ap', () => {
-//      expect(F(AP(
-    });
-
     test('test function application ((0 97 1 1) 5)', () => {
       let f = line(N(0n), N(97n), N(1n), N(1n));
-      console.log("f is ", f);
-
       expect((f as any).x(N(5n))).toStrictEqual(N(5n));
       expect(F(A(f, N(5n)))).toStrictEqual(N(5n));
     });
