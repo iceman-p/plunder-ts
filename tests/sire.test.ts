@@ -55,6 +55,9 @@ describe('small sire tests', () => {
     eq('__if __false', [sire.__if, sire.__false, 5n, 7n], 7n);
     eq('not 0', [sire.not, 0n], 1n);
     eq('not 1', [sire.not, 1n], 0n);
+    eq('and 0 0', [sire.and, 0n, 0n], 0n);
+    eq('and 1 0', [sire.and, 1n, 0n], 0n);
+    eq('and 1 1', [sire.and, 1n, 1n], 1n);
 
     eq('dec', [sire.dec, 81n], 80n);
     eq('mul', [sire.mul, 2n, 3n], 6n);
@@ -65,4 +68,9 @@ describe('small sire tests', () => {
     eq('met 5', [sire.met, 5n], 3n);
     // RangeError: Maximum call stack size exceeded
     //eq('met 512321', [sire.met, 512321n], 19n);
+
+    eq('eql 5 4', [sire.eql, 5n, 4n], 0n);
+    eq('eql 5 5', [sire.eql, 5n, 5n], 1n);
+    eq('eql (cow 5) (cow 5)', [sire.eql, [sire.cow, 5n], [sire.cow, 5n]], 1n);
+    eq('eql 5 (cow 5)', [sire.eql, 5n, [sire.cow, 5n]], 0n);
 });

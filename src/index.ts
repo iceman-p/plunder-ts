@@ -344,7 +344,8 @@ export enum OptKind {
   LOG,
   CNS,
   REF,
-  KAL
+  KAL,
+  IF,
 }
 
 // Intermediate form for the compiler.
@@ -354,6 +355,7 @@ export type Opt =
   | { t: OptKind.CNS, c: Fan }
   | { t: OptKind.REF, r: string }
   | { t: OptKind.KAL, f: Opt[] }
+  | { t: OptKind.IF, raw:Opt, i:Opt, th:Opt, el:Opt }
 
 // Collect all let statements in a function and hoist them to the top.
 export type TopOptLet = [string, Opt];
@@ -375,35 +377,102 @@ function optimize(r : Run) : Opt {
         next = next.f;
       }
       stack.push(optimize(next));
-      return { t: OptKind.KAL, f:stack.reverse() }
+
+      let call = stack.reverse();
+      if (call.length == 4 &&
+          call[0].t == OptKind.CNS &&
+          call[0].c.t == FanKind.DAT &&
+          call[0].c.d.t == DatKind.PIN &&
+          call[0].c.d.i.t == FanKind.FUN) {
+        if (buildName(call[0].c.d.i.n) == "_if") {
+          console.log("matched if!");
+          return { t: OptKind.IF,
+                   raw: { t: OptKind.KAL, f:call },
+                   i:call[1], th:call[2], el:call[3] };
+        }
+      }
+
+      return { t: OptKind.KAL, f:call }
   }
 }
 
+enum Position {
+  INNER,
+  STMT
+}
+
 //
-function runToFunctionText(constants : Fan[],
-                           opt : Opt) : string {
+function runToFunctionText(strs : string[],
+                           pos : Position,
+                           constants : Fan[],
+                           opt : Opt) {
   switch (opt.t) {
     case OptKind.LOG:
-      let escaped = JSON.stringify(opt.l);
-      return "(function(){console.log(" + escaped + ");\n" +
-        runToFunctionText(constants, opt.r) +
-        "})()";
+      if (pos == Position.STMT) {
+        strs.push("return ");
+      }
+      strs.push("(function(){console.log(");
+      strs.push(JSON.stringify(opt.l));
+      strs.push(");\n");
+      runToFunctionText(strs, Position.INNER, constants, opt.r);
+      strs.push("})()");
+      if (pos == Position.STMT) {
+        strs.push(";\n");
+      }
+      return;
     case OptKind.CNS:
-      // Only start trying to inline nat constants once raw nats are supported
-      // in Fan.
+      // TODO: Only start trying to inline nat constants once raw nats are
+      // supported in Fan.
       let idx = constants.length
       constants.push(opt.c);
-      return "constants[" + idx + "]";
+      if (pos == Position.STMT) {
+        strs.push("return ");
+      }
+      strs.push("constants[");
+      strs.push(idx.toString());
+      strs.push("]");
+      if (pos == Position.STMT) {
+        strs.push(";\n");
+      }
+      return;
     case OptKind.REF:
-      return opt.r;
-    case OptKind.KAL:
-      let f : string[] = ["AP("];
-      let strs = opt.f.map(function (x) {
-        return runToFunctionText(constants, x);
-      });
-      f.push(strs.join());
-      f.push(")");
-      return f.join('');
+      if (pos == Position.STMT) {
+        strs.push("return ");
+      }
+      strs.push(opt.r);
+      if (pos == Position.STMT) {
+        strs.push(";\n");
+      }
+      return;
+    case OptKind.KAL: {
+      if (pos == Position.STMT) {
+        strs.push("return ");
+      }
+      strs.push("AP(");
+      for (let xf of opt.f) {
+        runToFunctionText(strs, Position.INNER, constants, xf);
+        strs.push(",");
+      }
+      strs.push(")");
+      if (pos == Position.STMT) {
+        strs.push(";\n");
+      }
+      return;
+    }
+    case OptKind.IF: {
+      if (pos == Position.STMT) {
+        strs.push("if (valNat(");
+        runToFunctionText(strs, Position.INNER, constants, opt.i);
+        strs.push(") != 0n) {\n");
+        runToFunctionText(strs, Position.STMT, constants, opt.th);
+        strs.push("} else {\n");
+        runToFunctionText(strs, Position.STMT, constants, opt.el);
+        strs.push("}\n");
+      } else {
+        runToFunctionText(strs, Position.INNER, constants, opt.raw);
+      }
+      return;
+    }
   }
 }
 
@@ -423,33 +492,31 @@ export function optToFunction(name : string,
   // We produce the inner text of a function which given the environment,
   // returns a named function which uses our apply() based calling
   // convention. We set the name if appropriate so it shows up in devtools.
-  let f : string[] = ["return function " + name + "("];
+  let strs : string[] = ["return function " + name + "("];
   let args = []
   for (let i = 0; i < argc; ++i) {
     args.push(gensym());
   }
 //  args.reverse(); // Arguments are passed in in reverse order.
-  f.push(args.join());
-  f.push(") {\n");
+  strs.push(args.join());
+  strs.push(") {\n");
 
   for (let [letName, letVal] of lets) {
-    f.push("const " + letName + " = ");
-    f.push(runToFunctionText(constants, letVal));
-    f.push(";\n");
+    strs.push("const " + letName + " = ");
+    runToFunctionText(strs, Position.INNER, constants, letVal);
+    strs.push(";\n");
   }
 
-  f.push("return ");
-  f.push(runToFunctionText(constants, run));
-  f.push(";\n");
+  runToFunctionText(strs, Position.STMT, constants, run);
 
-  f.push("}");
+  strs.push("}");
 
-  // console.log(f.join(''));
+  console.log(strs.join(''));
 
-  let builder = new Function("AP", "constants", f.join('')) as any;
+  let builder = new Function("AP", "valNat", "constants", strs.join('')) as any;
   // TODO: Actually figuring out the type here is wack, and I bet you can't do
   // it without dependent types on `argc`?
-  return builder(AP, constants);
+  return builder(AP, valNat, constants);
 }
 
 let reservedWords = new Set<string>([
@@ -556,18 +623,13 @@ function matchJetPin(body : Fan) : Fun | null
 
   if (bodyName == "dec") {
     return function dec(a : Fan) {
-      console.log("dec jet");
+//      console.log("dec jet");
       let n = valNat(a);
       if (n == 0n) {
         return N(0n);
       } else {
         return N(n - 1n);
       }
-    }
-  } else if (bodyName == "add") {
-    return function add(a : Fan, b : Fan) {
-      console.log("jetted add");
-      return N(valNat(a) + valNat(b));
     }
   }
 
