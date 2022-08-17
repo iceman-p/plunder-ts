@@ -34,7 +34,7 @@ describe('test data jet matching', () => {
     });
 
     test('calling constructor makes row', () => {
-      expect(R(sire.cow, 4n, 1n, 2n, 3n, 4n)).toStrictEqual(
+      expect(R(sire.cow, 4n, 4n, 3n, 2n, 1n)).toStrictEqual(
         mkRow([N(1n), N(2n), N(3n), N(4n)]));
     });
   });
@@ -45,6 +45,19 @@ describe('test data jet matching', () => {
     });
     test('isPin | cdr cow', () => {
       expect(R(sire.isPin, R(sire.cdr, sire.cow))).toStrictEqual(N(0n));
+    });
+  });
+
+  describe('row jet tests', () => {
+    test('match isRow', () => {
+      expect(R(sire.isRow, [sire.cow, 1n, 5n])).toStrictEqual(N(1n));
+    });
+
+    test('weld two rows', () => {
+      expect(F(R(sire.weld, F(R(sire.cow, 1n, 5n)), F(R(sire.cow, 1n, 10n)))))
+        .toStrictEqual({ t: FanKind.DAT,
+                         d: { t: DatKind.ROW, r: [N(5n), N(10n) ] }});
+
     });
   });
 });

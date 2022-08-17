@@ -1,4 +1,4 @@
-import { Fun, FanKind, DatKind, Nat, Fan, Dat } from "./types"
+import { FanFun, Fun, FanKind, DatKind, Nat, Fan, Dat } from "./types"
 import * as bigintConversion from 'bigint-conversion'
 
 export function E(val:Fan)          : Fan { return whnf(val);       }
@@ -24,12 +24,11 @@ function datArity(dat:Dat) : Nat {
 function datEval(dat:Dat, args:Fan[]) : Fan {
   switch (dat.t) {
     case DatKind.PIN:
-      let params = args.reverse();
-      return callFun(dat.x, dat.i, params);
+      return callFun(dat.x, dat.i, args);
     case DatKind.ROW:
-      return { t: FanKind.DAT, d:{ t:DatKind.COW, z:BigInt(args.length) } };
+      return mkCow(args.length);
     case DatKind.COW:
-      return { t: FanKind.DAT, d:{ t:DatKind.ROW, r:args.reverse() } };
+      return mkRow(args);
   }
 }
 
@@ -53,10 +52,34 @@ function datWut(dat:Dat,
     case DatKind.COW:
       return mkRul(0n, dat.z + 1n, N(0n));
     case DatKind.ROW:
-      // TODO: In what order do arguments get stored?
-      throw "todo: datWut row"
+      let sz = dat.r.length;
+      if (sz == 0) {
+        return mkRul(0n, 1n, N(0n));
+      }
+
+      let rev = dat.r.slice().reverse();
+      let ret = mkCow(sz);
+      for (let x of rev) {
+        ret = mkCel(ret, x);
+      }
+      return ret;
   }
 }
+
+function mkCow(sz : number) : Fan {
+  return { t: FanKind.DAT, d:{ t:DatKind.COW, z:BigInt(sz) } };
+}
+
+function mkRow(a : Fan[]) : Fan {
+  return { t: FanKind.DAT, d:{ t:DatKind.ROW, r:a } };
+}
+
+function isRow(a : Fan)
+  : a is { t: FanKind.DAT, d: { t: DatKind.ROW, r: Fan[]} }
+{
+  return a.t == FanKind.DAT && a.d.t == DatKind.ROW;
+}
+
 
 // -----------------------------------------------------------------------
 
@@ -76,8 +99,7 @@ function subst(fun:Fan, args:Fan[]) : Fan {
   }
 
   if (fun.t == FanKind.FUN) {
-    let params = args.reverse();
-    let ret = callFun(fun.x, fun, params);
+    let ret = callFun(fun.x, fun, args);
     return ret;
   }
 
@@ -385,7 +407,6 @@ function optimize(r : Run) : Opt {
           call[0].c.d.t == DatKind.PIN &&
           call[0].c.d.i.t == FanKind.FUN) {
         if (buildName(call[0].c.d.i.n) == "_if") {
-          console.log("matched if!");
           return { t: OptKind.IF,
                    raw: { t: OptKind.KAL, f:call },
                    i:call[1], th:call[2], el:call[3] };
@@ -497,8 +518,7 @@ export function optToFunction(name : string,
   for (let i = 0; i < argc; ++i) {
     args.push(gensym());
   }
-//  args.reverse(); // Arguments are passed in in reverse order.
-  strs.push(args.join());
+  strs.push(args.reverse().join());
   strs.push(") {\n");
 
   for (let [letName, letVal] of lets) {
@@ -511,7 +531,7 @@ export function optToFunction(name : string,
 
   strs.push("}");
 
-  console.log(strs.join(''));
+  //console.log(strs.join(''));
 
   let builder = new Function("AP", "valNat", "constants", strs.join('')) as any;
   // TODO: Actually figuring out the type here is wack, and I bet you can't do
@@ -623,13 +643,26 @@ function matchJetPin(body : Fan) : Fun | null
 
   if (bodyName == "dec") {
     return function dec(a : Fan) {
-//      console.log("dec jet");
       let n = valNat(a);
       if (n == 0n) {
         return N(0n);
       } else {
         return N(n - 1n);
       }
+    }
+  } else if (bodyName == "isRow") {
+    return function _isRow(a : Fan) {
+      return isRow(E(a)) ? N(1n) : N(0n);
+    }
+  } else if (bodyName == "weld") {
+    return function weld(this : FanFun, b : Fan, a : Fan) {
+      E(a);
+      E(b);
+      if (isRow(a) && isRow(b)) {
+        return mkRow([...a.d.r, ...b.d.r]);
+      }
+
+      return callFun(this.x, this, [b, a]);
     }
   }
 
@@ -641,7 +674,7 @@ export function mkFun(name : bigint, args : bigint, body : Fan) : Fan {
   if (name == 0n) {
     if (isNatEq(body, 0n)) {
       if (args == 1n) {
-        return { t:FanKind.DAT, d:{ t:DatKind.ROW, r:new Array<Fan>() } };
+        return mkRow([]);
       } else {
         return { t:FanKind.DAT, d:{ t:DatKind.COW, z:(args - 1n) } };
       }
@@ -677,6 +710,11 @@ export function force(val : Fan) : Fan {
   if (val.t == FanKind.APP) {
     force(val.f);
     force(val.x);
+  }
+  if (val.t == FanKind.DAT && val.d.t == DatKind.ROW) {
+    for (let x of val.d.r) {
+      force(x);
+    }
   }
   return val;
 }
