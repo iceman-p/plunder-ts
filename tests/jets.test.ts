@@ -59,6 +59,11 @@ describe('test data jet matching', () => {
                          d: { t: DatKind.ROW, r: [N(5n), N(10n) ] }});
 
     });
+
+    test('get', () => {
+      expect(F(R(sire.get, F(R(sire.cow, 3n, 3n, 2n, 1n)), N(2n))))
+        .toStrictEqual(N(3n));
+    });
   });
 });
 

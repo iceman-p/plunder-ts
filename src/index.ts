@@ -654,6 +654,15 @@ function matchJetPin(body : Fan) : Fun | null
     return function _isRow(a : Fan) {
       return isRow(E(a)) ? N(1n) : N(0n);
     }
+  } else if (bodyName == "get") {
+    return function get(this : FanFun, i : Fan, v : Fan ) {
+      E(v);
+      if (isRow(v)) {
+        return v.d.r[Number(valNat(i))];
+      }
+
+      return callFun(this.x, this, [i, v]);
+    }
   } else if (bodyName == "weld") {
     return function weld(this : FanFun, b : Fan, a : Fan) {
       E(a);
