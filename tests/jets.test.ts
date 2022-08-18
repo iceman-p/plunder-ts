@@ -73,8 +73,19 @@ describe('test data jet matching', () => {
 
     });
 
+    // Ensure manual destructuring of the row works.
+    test('car row', () => {
+      expect(F(R(sire.car, [sire.cow, 2n, 2n, 1n])))
+        .toStrictEqual(R(R(sire.cow, 2n), 2n));
+    });
+
+    test('cdr row', () => {
+      expect(F(R(sire.cdr, [sire.cow, 2n, 2n, 1n])))
+        .toStrictEqual(N(1n));
+    });
+
     test('get', () => {
-      expect(F(R(sire.get, F(R(sire.cow, 3n, 3n, 2n, 1n)), N(2n))))
+      expect(F(R(sire.get, [sire.cow, 3n, 3n, 2n, 1n], N(2n))))
         .toStrictEqual(N(3n));
     });
   });

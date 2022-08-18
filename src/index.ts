@@ -58,11 +58,18 @@ function datWut(dat:Dat,
       }
 
       let rev = dat.r.slice().reverse();
-      let ret = mkCow(sz);
-      for (let x of rev) {
-        ret = mkCel(ret, x);
+      if (rev.length == 0) {
+        throw "implement datWut row 0 case"
+      } else if (rev.length == 1) {
+        return mkCel(mkCow(sz), rev[0]);
+      } else {
+        // Multiple items in list.
+        let ret = mkCow(sz);
+        for (let x of rev.slice(0, -1)) {
+          ret = A(ret, x);
+        }
+        return mkCel(ret, rev.slice(-1)[0]);
       }
-      return ret;
   }
 }
 
@@ -84,6 +91,11 @@ function isRow(a : Fan)
 // -----------------------------------------------------------------------
 
 function callFun(f:Fun, _this:Fan, args:Fan[]) : Fan {
+  // if (_this.t == FanKind.FUN) {
+  //   console.log("callFun ", buildName(_this.n), args);
+  // } else {
+  //   console.log("callFun ", "NOT A FUN?", args);
+  // }
   return E(f.apply(_this, args as any) as Fan);
 }
 
@@ -135,7 +147,9 @@ function subst(fun:Fan, args:Fan[]) : Fan {
               function goLaw(nm, ar, bd) {
                 return E(A(A(A(f, N(nm)), N(ar)), bd));
               },
-              function goApp(g : Fan, y : Fan) : Fan { return A(A(a, g), y); }
+              function goApp(g : Fan, y : Fan) : Fan {
+                return E(A(A(a, g), y));
+              }
             ));
           case FanKind.THUNK:
             throw "Impossible to have a thunk here.";

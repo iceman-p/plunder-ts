@@ -59,6 +59,9 @@ describe('small sire tests', () => {
     eq('and 1 0', [sire.and, 1n, 0n], 0n);
     eq('and 1 1', [sire.and, 1n, 1n], 1n);
 
+    eq('ifNot __true 5 6', [sire.ifNot, sire.__true, 5n, 6n], 6n);
+    eq('ifNot __false 5 6', [sire.ifNot, sire.__false, 5n, 6n], 5n);
+
     eq('dec', [sire.dec, 81n], 80n);
     eq('mul', [sire.mul, 2n, 3n], 6n);
     eq('min', [sire.min, 41n, 34n], 34n);
