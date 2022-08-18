@@ -687,6 +687,47 @@ function matchJetPin(body : Fan) : Fun | null
 
       return callFun(this.x, this, [b, a]);
     }
+  } else if (bodyName == "take") {
+    return function take(this : FanFun, b : Fan, a : Fan) {
+      E(a);
+      E(b);
+      if (isRow(b)) {
+        return mkRow(b.d.r.slice(0, Number(valNat(a))));
+      }
+
+      return callFun(this.x, this, [b, a]);
+    }
+  } else if (bodyName == "drop") {
+    return function drop(this : FanFun, b : Fan, a : Fan) {
+      E(a);
+      E(b);
+      if (isRow(b)) {
+        return mkRow(b.d.r.slice(Number(valNat(a))));
+      }
+
+      return callFun(this.x, this, [b, a]);
+    }
+  } else if (bodyName == "map") {
+    return function map(this : FanFun, b : Fan, a : Fan) {
+      E(a);
+      E(b);
+      if (isRow(b)) {
+        return mkRow(b.d.r.map(function (x) {
+          return E(A(a, x));
+        }));
+      }
+
+      return callFun(this.x, this, [b, a]);
+    }
+  } else if (bodyName == "len") {
+    return function drop(this : FanFun, a : Fan) {
+      E(a);
+      if (isRow(a)) {
+        return N(BigInt(a.d.r.length));
+      }
+
+      return callFun(this.x, this, [a]);
+    }
   }
 
   return null;

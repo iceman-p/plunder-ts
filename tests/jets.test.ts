@@ -73,6 +73,29 @@ describe('test data jet matching', () => {
 
     });
 
+    test('take', () => {
+      expect(F(R(sire.take, 2n, F(R(sire.cow, 3n, 3n, 2n, 1n)))))
+        .toStrictEqual({ t: FanKind.DAT,
+                         d: { t: DatKind.ROW, r: [N(1n), N(2n)] }});
+    });
+
+    test('drop', () => {
+      expect(F(R(sire.drop, 1n, F(R(sire.cow, 3n, 3n, 2n, 1n)))))
+        .toStrictEqual({ t: FanKind.DAT,
+                         d: { t: DatKind.ROW, r: [N(2n), N(3n)] }});
+    });
+
+    test('map', () => {
+      expect(F(R(sire.map, [sire.add, 1n], F(R(sire.cow, 3n, 3n, 2n, 1n)))))
+        .toStrictEqual({ t: FanKind.DAT,
+                         d: { t: DatKind.ROW, r: [N(2n), N(3n), N(4n)] }});
+    });
+
+    test('len', () => {
+      expect(F(R(sire.len, F(R(sire.cow, 3n, 3n, 2n, 1n)))))
+        .toStrictEqual(N(3n));
+    });
+
     // Ensure manual destructuring of the row works.
     test('car row', () => {
       expect(F(R(sire.car, [sire.cow, 2n, 2n, 1n])))
