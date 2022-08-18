@@ -37,6 +37,19 @@ describe('test data jet matching', () => {
       expect(R(sire.cow, 4n, 4n, 3n, 2n, 1n)).toStrictEqual(
         mkRow([N(1n), N(2n), N(3n), N(4n)]));
     });
+
+    test('row constructor identity eq', () => {
+      expect(R(sire.cow, 4n)).toStrictEqual(R(sire.cow, 4n));
+    });
+
+    test('row constructor returned on call', () => {
+      expect(R(sire.cow, 4n, 4n, 3n, 2n, 1n, 7n)).toStrictEqual(
+        R(sire.cow, 4n));
+    });
+
+    test('row isApp', () => {
+      expect(F(R(sire.isApp, [sire.cow, 3n, 3n, 2n, 1n]))).toStrictEqual(N(1n));
+    });
   });
 
   describe('pin tests', () => {

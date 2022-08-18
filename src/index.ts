@@ -26,7 +26,7 @@ function datEval(dat:Dat, args:Fan[]) : Fan {
     case DatKind.PIN:
       return callFun(dat.x, dat.i, args);
     case DatKind.ROW:
-      return mkCow(args.length);
+      return mkCow(dat.r.length);
     case DatKind.COW:
       return mkRow(args);
   }
