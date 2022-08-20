@@ -941,17 +941,22 @@ export function mkFun(name : bigint, args : bigint, body : Fan) : Fan {
 // -----------------------------------------------------------------------
 
 export function force(val : Fan) : Fan {
-  while (val.t == FanKind.THUNK) {
-    val.x();
-  }
+  let stack : Fan[] = [val]
+  while (stack.length > 0) {
+    let cur = stack.pop()!;
 
-  if (val.t == FanKind.APP) {
-    force(val.f);
-    force(val.x);
-  }
-  if (val.t == FanKind.DAT && val.d.t == DatKind.ROW) {
-    for (let x of val.d.r) {
-      force(x);
+    while (cur.t == FanKind.THUNK) {
+      cur.x();
+    }
+
+    if (cur.t == FanKind.APP) {
+      stack.push(cur.f);
+      stack.push(cur.x);
+    }
+    if (cur.t == FanKind.DAT && cur.d.t == DatKind.ROW) {
+      for (let x of cur.d.r) {
+        stack.push(x);
+      }
     }
   }
   return val;
