@@ -12,15 +12,5 @@ function N(nat:Nat)          : Fan { return p.mkNat(nat);      }
 
 function R(...i:s.ExportType[]) : Fan { return E(s.arrayToExport(i)); }
 
-describe('mandelbrot tests', () => {
-  test('4x4', () => {
-    let x = F(R(mandelbrot.mandelbrotPpm, 4n, 4n));
-    console.log(x);
-  });
-});
-
-
-// Local Variables:
-// typescript-indent-level: 2
-// End:
-// vim: noai:ts=2:sw=2
+let x = F(R(mandelbrot.mandelbrotPpm, 16n, 16n));
+console.log(x);

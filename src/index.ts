@@ -298,6 +298,14 @@ export type TopRunLet = [string, Run];
 export function AP(f:Fan, ...xs:Fan[]) : Fan {
   if (xs.length == 0) {
     return f;
+  }
+
+  let ra = rawArity(f);
+  if (ra != 0n && ra == BigInt(xs.length)) {
+    return mkThunk(function() {
+      let result = subst(f,xs.reverse());
+      return result;
+    });
   } else if (xs.length == 1) {
     return mkApp(f, xs[0]);
   } else {
@@ -425,11 +433,16 @@ function optimize(r : Run) : Opt {
           call[0].t == OptKind.CNS &&
           call[0].c.t == FanKind.DAT &&
           call[0].c.d.t == DatKind.PIN &&
-          call[0].c.d.i.t == FanKind.FUN) {
-        if (buildName(call[0].c.d.i.n) == "_if") {
+        call[0].c.d.i.t == FanKind.FUN) {
+        let bn = buildName(call[0].c.d.i.n);
+        if (bn == "_if") {
           return { t: OptKind.IF,
                    raw: { t: OptKind.KAL, f:call },
                    i:call[1], th:call[2], el:call[3] };
+        } else if (bn == "ifNot") {
+          return { t: OptKind.IF,
+                   raw: { t: OptKind.KAL, f:call },
+                   i:call[1], th:call[3], el:call[2] };
         }
       }
 
@@ -551,7 +564,7 @@ export function optToFunction(name : string,
 
   strs.push("}");
 
-  //console.log(strs.join(''));
+//  console.log(strs.join(''));
 
   let builder = new Function("AP", "valNat", "constants", strs.join('')) as any;
   // TODO: Actually figuring out the type here is wack, and I bet you can't do
