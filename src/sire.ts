@@ -33,12 +33,12 @@ export function arrayToExport(e:ExportType[]) : Fan {
     }
 }
 
-function run(debug:string, e:ExportType) {
+export function run(debug:string, e:ExportType) {
 //    console.log("run(" + debug + ")");
     return F(parse(e));
 }
 
-function runpin(debug:string, e:ExportType) {
+export function runpin(debug:string, e:ExportType) {
 //    console.log("runpin(" + debug + ")");
     let raw = F(parse(e));
     let wrap = p.mkApp(N(2n), raw);
@@ -452,7 +452,7 @@ s.iDec48 = runpin("iDec48", [0n, 61797657035881n, 1n, [0n, s.dec48, 1n]]);
 s.iEql48 = runpin("iEql48", [0n, 61797808817513n, 2n, [0n, [0n, s.eql48, 1n], 2n]]);
 s.iIsNeg48 = runpin("iIsNeg48", [0n, 4049975649718454633n, 1n, [0n, [0n, s.gth48, 1n], 140737488355327n]]);
 s.iAbs48 = runpin("iAbs48", [0n, 61797925273961n, 1n, [0n, [0n, [0n, s.__if, [0n, s.iIsNeg48, 1n]], [0n, s.iNeg48, 1n]], 1n]]);
-s.iDiv48 = runpin("iDiv48", [0n, 61797976065129n, 2n, [1n, [0n, [0n, s.div48, [0n, s.iAbs48, 1n]], [0n, s.iAbs48, 2n]], [0n, [0n, [0n, s.__if, [0n, [0n, s.xor, [0n, s.iIsNeg48, 1n]], [0n, s.iIsNeg48, 1n]]], [0n, s.iNeg48, 3n]], 3n]]]);
+s.iDiv48 = runpin("iDiv48", [0n, 61797976065129n, 2n, [1n, [0n, [0n, s.div48, [0n, s.iAbs48, 1n]], [0n, s.iAbs48, 2n]], [0n, [0n, [0n, s.__if, [0n, [0n, s.xor, [0n, s.iIsNeg48, 1n]], [0n, s.iIsNeg48, 2n]]], [0n, s.iNeg48, 3n]], 3n]]]);
 s.iGth48 = runpin("iGth48", [0n, 61797741905769n, 2n, [0n, [0n, [0n, s.__if, [0n, s.iIsNeg48, 1n]], [0n, [0n, s.and, [0n, s.iIsNeg48, 2n]], [0n, [0n, s.gth48, [0n, s.iNeg48, 2n]], [0n, s.iNeg48, 1n]]]], [0n, [0n, s.or, [0n, s.iIsNeg48, 2n]], [0n, [0n, s.gth48, 1n], 2n]]]]);
 s.iGte48 = runpin("iGte48", [0n, 61797691574121n, 2n, [0n, [0n, s.or, [0n, [0n, s.eql48, 1n], 2n]], [0n, [0n, s.iGth48, 1n], 2n]]]);
 s.iLte48 = runpin("iLte48", [0n, 61797691575401n, 2n, [0n, [0n, s.iGte48, 2n], 1n]]);

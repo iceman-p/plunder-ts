@@ -95,11 +95,6 @@ function isRow(a : Fan)
 // -----------------------------------------------------------------------
 
 function callFun(f:Fun, _this:Fan, args:Fan[]) : Fan {
-  // if (_this.t == FanKind.FUN) {
-  //   console.log("callFun ", buildName(_this.n), args);
-  // } else {
-  //   console.log("callFun ", "NOT A FUN?", args);
-  // }
   return E(f.apply(_this, args as any) as Fan);
 }
 
@@ -675,9 +670,100 @@ function matchJetPin(body : Fan) : Fun | null
         return N(n - 1n);
       }
     }
+  } else if (bodyName == "add") {
+    return function add(b : Fan, a : Fan) {
+      return N(valNat(b) + valNat(a));
+    }
+  } else if (bodyName == "mul") {
+    return function mul(b : Fan, a : Fan) {
+      return N(valNat(b) * valNat(a));
+    }
+  } else if (bodyName == "sub") {
+    return function sub(b : Fan, a : Fan) {
+      let x = valNat(a);
+      let y = valNat(b);
+      if (y > x) {
+        return N(0n);
+      } else {
+        return N(x - y);
+      }
+    }
+  } else if (bodyName == "bex") {
+    return function bex(a : Fan) {
+      return N(2n ** valNat(a));
+    }
+  } else if (bodyName == "lte") {
+    return function lte(b : Fan, a : Fan) {
+      if (valNat(a) <= valNat(b)) {
+        return N(1n);
+      } else {
+        return N(0n);
+      }
+    }
+  } else if (bodyName == "lth") {
+    return function lth(b : Fan, a : Fan) {
+      if (valNat(a) < valNat(b)) {
+        return N(1n);
+      } else {
+        return N(0n);
+      }
+    }
+  } else if (bodyName == "div") {
+    return function div(b : Fan, a : Fan) {
+      let yv = valNat(b);
+      if (yv == 0n) {
+        return N(0n);
+      } else {
+        return N(valNat(a) / yv);
+      }
+    }
+  } else if (bodyName == "mod") {
+    return function mod(b : Fan, a : Fan) {
+      return N(valNat(a) % valNat(b));
+    }
+  } else if (bodyName == "aeq") {
+    return function aeq(b : Fan, a : Fan) {
+      if (valNat(a) == valNat(b)) {
+        return N(1n);
+      } else {
+        return N(0n);
+      }
+    }
+  } else if (bodyName == "lsh") {
+    return function lsh(b : Fan, a : Fan) {
+      return N(valNat(a) << valNat(b));
+    }
+  } else if (bodyName == "rsh") {
+    return function rsh(b : Fan, a : Fan) {
+      return N(valNat(a) >> valNat(b));
+    }
+  } else if (bodyName == "mix") {
+    return function mix(b : Fan, a : Fan) {
+      return N(valNat(a) ^ valNat(b));
+    }
+  } else if (bodyName == "con") {
+    return function con(b : Fan, a : Fan) {
+      return N(valNat(a) | valNat(b));
+    }
+  } else if (bodyName == "dis") {
+    return function dis(b : Fan, a : Fan) {
+      return N(valNat(a) & valNat(b));
+    }
+
+  // Row jets
   } else if (bodyName == "isRow") {
     return function _isRow(a : Fan) {
       return isRow(E(a)) ? N(1n) : N(0n);
+    }
+  } else if (bodyName == "idx") {
+    return function idx(this : FanFun, v : Fan, i : Fan ) {
+      E(v);
+      if (isRow(v)) {
+        return v.d.r[Number(valNat(i))];
+      }
+
+      // TODO: Remove callFun in jet impls.
+      return callFun(this.x, this, [v, i]);
     }
   } else if (bodyName == "get") {
     return function get(this : FanFun, i : Fan, v : Fan ) {
@@ -689,6 +775,15 @@ function matchJetPin(body : Fan) : Fun | null
       // TODO: Remove callFun in jet impls.
       return callFun(this.x, this, [i, v]);
     }
+  } else if (bodyName == "len") {
+    return function drop(this : FanFun, a : Fan) {
+      E(a);
+      if (isRow(a)) {
+        return N(BigInt(a.d.r.length));
+      }
+
+      return callFun(this.x, this, [a]);
+    }
   } else if (bodyName == "weld") {
     return function weld(this : FanFun, b : Fan, a : Fan) {
       E(a);
@@ -699,6 +794,19 @@ function matchJetPin(body : Fan) : Fun | null
 
       return callFun(this.x, this, [b, a]);
     }
+  } else if (bodyName == "map") {
+    return function map(this : FanFun, b : Fan, a : Fan) {
+      E(a);
+      E(b);
+      if (isRow(b)) {
+        return mkRow(b.d.r.map(function (x) {
+          return E(A(a, x));
+        }));
+      }
+
+      return callFun(this.x, this, [b, a]);
+    }
+  // TODO: put
   } else if (bodyName == "take") {
     return function take(this : FanFun, b : Fan, a : Fan) {
       E(a);
@@ -719,25 +827,64 @@ function matchJetPin(body : Fan) : Fun | null
 
       return callFun(this.x, this, [b, a]);
     }
-  } else if (bodyName == "map") {
-    return function map(this : FanFun, b : Fan, a : Fan) {
-      E(a);
-      E(b);
-      if (isRow(b)) {
-        return mkRow(b.d.r.map(function (x) {
-          return E(A(a, x));
-        }));
-      }
-
-      return callFun(this.x, this, [b, a]);
-    }
-  } else if (bodyName == "len") {
+  } else if (bodyName == "cat") {
     return function drop(this : FanFun, a : Fan) {
       E(a);
       if (isRow(a)) {
-        return N(BigInt(a.d.r.length));
+        let valid = true;
+        let arrays = [];
+        for (let x of a.d.r) {
+          E(x);
+          if (isRow(x)) {
+            arrays.push(x.d.r);
+          } else {
+            valid = false;
+            break;
+          }
+        }
+
+        if (valid) {
+          if (arrays.length == 0) {
+            return mkRow([]);
+          } else {
+            return mkRow(([] as Fan[]).concat.apply([], arrays));
+          }
+        }
       }
 
+      return callFun(this.x, this, [a]);
+    }
+  } else if (bodyName == "cordFromRow") {
+    // TODO: As mentioned in the haskell implementation, you probably don't
+    // want to have this jet and should be using a bar now that it exists.
+    return function cordFromRow(this : FanFun, a : Fan) {
+      E(a);
+      if (isRow(a)) {
+        let nats : Nat[] = [];
+        for (let x of a.d.r) {
+          // Validate that each item is a good number.
+          whnf(x);
+          if (x.t == FanKind.NAT && x.v > 0n && x.v < 256n) {
+            nats.push(x.v);
+          } else {
+            // Fallback.
+            return callFun(this.x, this, [a]);
+          }
+        }
+
+        // This is convoluted and kind of dumb, but it works. It'd be better if
+        // there was a more optimized thing to do here.
+        function dec2hex(i : bigint) {
+          return (i + 0x100n).toString(16).substr(-2).toUpperCase();
+        }
+
+        var hexStr = nats.map(dec2hex).join('');
+        let b = BigInt('0x' + hexStr)
+        let n = N(b);
+        let str = bigintConversion.bigintToText(b);
+        console.log("str:", str);
+        return n;
+      }
       return callFun(this.x, this, [a]);
     }
   }
