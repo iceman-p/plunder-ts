@@ -24,7 +24,11 @@ function datArity(dat:Dat) : Nat {
 function datEval(dat:Dat, args:Fan[]) : Fan {
   switch (dat.t) {
     case DatKind.PIN:
-      return callFun(dat.x, dat.i, args);
+      let ret = dat.x.apply(dat.i, args);
+      while (ret.t == FanKind.THUNK) {
+        ret.x();
+      }
+      return ret;
     case DatKind.ROW:
       return mkCow(dat.r.length);
     case DatKind.COW:
@@ -111,7 +115,10 @@ function subst(fun:Fan, args:Fan[]) : Fan {
   }
 
   if (fun.t == FanKind.FUN) {
-    let ret = callFun(fun.x, fun, args);
+    let ret = fun.x.apply(fun, args);
+    while (ret.t == FanKind.THUNK) {
+      ret.x();
+    }
     return ret;
   }
 
@@ -333,14 +340,18 @@ export function fanToRun(argc : number,
   let topLets : TopRunLet[] = [];
 
   function recurse(refs : string[], val : Fan) : Run {
-    whnf(val);
+    while (val.t == FanKind.THUNK) {
+      val.x();
+    }
 
     if (val.t == FanKind.NAT && Number(val.v) < refs.length) {
       return {t: RunKind.REF, r: refs[Number(val.v)]};
     }
 
     if (val.t == FanKind.APP) {
-      whnf(val.f);
+      while (val.f.t == FanKind.THUNK) {
+        val.f.x();
+      }
 
       if (val.f.t == FanKind.NAT) {
         // If the toplevel `val` is `(2 x)`:
@@ -675,6 +686,7 @@ function matchJetPin(body : Fan) : Fun | null
         return v.d.r[Number(valNat(i))];
       }
 
+      // TODO: Remove callFun in jet impls.
       return callFun(this.x, this, [i, v]);
     }
   } else if (bodyName == "weld") {
@@ -769,7 +781,9 @@ export function mkFun(name : bigint, args : bigint, body : Fan) : Fan {
 // -----------------------------------------------------------------------
 
 export function force(val : Fan) : Fan {
-  whnf(val);
+  while (val.t == FanKind.THUNK) {
+    val.x();
+  }
 
   if (val.t == FanKind.APP) {
     force(val.f);
@@ -784,7 +798,9 @@ export function force(val : Fan) : Fan {
 }
 
 function valNat(val : Fan) : Nat {
-  whnf(val);
+  while (val.t == FanKind.THUNK) {
+    val.x();
+  }
 
   if (val.t == FanKind.NAT) {
     return val.v;
