@@ -1,92 +1,92 @@
-import { FanFun, Fun, FanKind, DatKind, Nat, Fan, Dat } from "./types"
+import { FanFun, Fun, FanKind, Nat, Fan } from "./types"
 import * as bigintConversion from 'bigint-conversion'
 
 export function E(val:Fan)          : Fan { return whnf(val);       }
 export function F(val:Fan)          : Fan { return force(val);      }
 export function A(fun:Fan, arg:Fan) : Fan { return mkApp(fun, arg); }
-export function N(nat:Nat)          : Fan { return mkNat(nat);      }
 
 // -----------------------------------------------------------------------
 
-// Dat implementation
-
-function datArity(dat:Dat) : Nat {
-  switch (dat.t) {
-    case DatKind.PIN:
-      return rawArity(dat.i);
-    case DatKind.ROW:
-      return 1n;
-    case DatKind.COW:
-      return dat.z;
-  }
-}
-
-function datEval(dat:Dat, args:Fan[]) : Fan {
-  switch (dat.t) {
-    case DatKind.PIN:
-      return whnf(dat.x.apply(dat.i, args));
-    case DatKind.ROW:
-      return mkCow(dat.r.length);
-    case DatKind.COW:
-      return mkRow(args);
-  }
-}
-
 function rebuildPinBody(args:bigint, i:Fan) : Fan {
   if (args == 0n) {
-    return A(N(2n), i);
+    return A(2n, i);
   } else {
-    return A(A(N(0n), rebuildPinBody(args - 1n, i)), N(args));
+    return A(A(0n, rebuildPinBody(args - 1n, i)), args);
   }
 }
 
-function datWut(dat:Dat,
+function rowWut(r : Fan[],
                 mkRul:((name:bigint, arity:bigint, body:Fan) => Fan),
                 mkCel:((head:Fan, tail:Fan) => Fan)) : Fan {
-  switch (dat.t) {
-    case DatKind.PIN:
-      // PIN p -> rul (LN 0) args (pinBody args $ pinItem p)
-      //            where args = (trueArity $ pinItem p)
-      let args = trueArity(dat.i);
-      return mkRul(0n, args, rebuildPinBody(args, dat.i));
-    case DatKind.COW:
-      return mkRul(0n, dat.z + 1n, N(0n));
-    case DatKind.ROW:
-      let sz = dat.r.length;
-      if (sz == 0) {
-        return mkRul(0n, 1n, N(0n));
-      }
+  let sz = r.length;
+  if (sz == 0) {
+    return mkRul(0n, 1n, 0n);
+  }
 
-      let rev = dat.r.slice().reverse();
-      if (rev.length == 0) {
-        throw "implement datWut row 0 case"
-      } else if (rev.length == 1) {
-        return mkCel(mkCow(sz), rev[0]);
-      } else {
-        // Multiple items in list.
-        let ret = mkCow(sz);
-        for (let x of rev.slice(0, -1)) {
-          ret = A(ret, x);
-        }
-        return mkCel(ret, rev.slice(-1)[0]);
-      }
+  let rev = r.slice().reverse();
+  if (rev.length == 0) {
+    throw "implement datWut row 0 case"
+  } else if (rev.length == 1) {
+    return mkCel(mkCow(sz), rev[0]);
+  } else {
+    // Multiple items in list.
+    let ret = mkCow(sz);
+    for (let x of rev.slice(0, -1)) {
+      ret = A(ret, x);
+    }
+    return mkCel(ret, rev.slice(-1)[0]);
   }
 }
 
-function mkCow(sz : number) : Fan {
-  return { t: FanKind.DAT, d:{ t:DatKind.COW, z:BigInt(sz) } };
+export function mkCow(sz : number) : Fan {
+  return { t: FanKind.COW, z:BigInt(sz) };
 }
 
-function mkRow(a : Fan[]) : Fan {
-  return { t: FanKind.DAT, d:{ t:DatKind.ROW, r:a } };
+export function mkRow(a : Fan[]) : Fan {
+  return { t: FanKind.ROW, r:a };
+}
+
+function isApp(a : Fan)
+  : a is { t: FanKind.APP, f:Fan, x:Fan }
+{
+  return typeof a !== "bigint" && a.t == FanKind.APP;
+}
+
+function isFun(a : Fan)
+  : a is { t: FanKind.FUN, n:Nat, a:Nat, b:Fan, x:Fun }
+{
+  return typeof a !== "bigint" && a.t == FanKind.FUN;
+}
+
+function isThunk(a : Fan)
+  : a is { t: FanKind.THUNK, x:((() => void) | null), r:(Fan | null) }
+{
+  return typeof a !== "bigint" && a.t == FanKind.THUNK;
+}
+
+function isPin(a : Fan)
+  : a is { t: FanKind.PIN, i:Fan, x:Fun }
+{
+  return typeof a !== "bigint" && a.t == FanKind.PIN;
 }
 
 function isRow(a : Fan)
-  : a is { t: FanKind.DAT, d: { t: DatKind.ROW, r: Fan[]} }
+  : a is { t: FanKind.ROW, r:Fan[] }
 {
-  return a.t == FanKind.DAT && a.d.t == DatKind.ROW;
+  return typeof a !== "bigint" && a.t == FanKind.ROW;
 }
 
+function isCow(a : Fan)
+  : a is { t: FanKind.COW, z:Nat }
+{
+  return typeof a !== "bigint" && a.t == FanKind.COW;
+}
+
+function isNat(a : Fan)
+  : a is Nat
+{
+  return typeof a === "bigint"
+}
 
 // -----------------------------------------------------------------------
 
@@ -100,7 +100,7 @@ function callFun(f:Fun, _this:Fan, args:Fan[]) : Fan {
   Collect all the arguments and execute `f`.
 */
 function subst(fun:Fan, args:Fan[]) : Fan {
-  while (fun.t == FanKind.THUNK) {
+  while (isThunk(fun)) {
     if (fun.r !== null) {
       fun = fun.r;
     } else {
@@ -108,21 +108,13 @@ function subst(fun:Fan, args:Fan[]) : Fan {
     }
   }
 
-  while (fun.t == FanKind.APP) {
+  while (isApp(fun)) {
     args.push(fun.x);
     fun = fun.f;
   }
 
-  if (fun.t == FanKind.FUN) {
-    return E(fun.x.apply(fun, args));
-  }
-
-  if (fun.t == FanKind.DAT) {
-    return datEval(fun.d, args);
-  }
-
-  if (fun.t == FanKind.NAT) {
-    switch(fun.v) {
+  if (isNat(fun)) {
+    switch(fun) {
       case 0n: {
         let n = args[2];
         let a = args[1];
@@ -136,25 +128,34 @@ function subst(fun:Fan, args:Fan[]) : Fan {
         let x = args[0];
 
         x = E(x);
-        switch (x.t) {
-          case FanKind.FUN:
-            return E(A(A(A(f, N(x.n)), N(x.a)), x.b));
-          case FanKind.APP:
-            return E(A(A(a, x.f), x.x));
-          case FanKind.NAT:
-            return E(A(n, x));
-          case FanKind.DAT:
-            return E(datWut(
-              x.d,
-              function goLaw(nm, ar, bd) {
-                return E(A(A(A(f, N(nm)), N(ar)), bd));
-              },
-              function goApp(g : Fan, y : Fan) : Fan {
-                return E(A(A(a, g), y));
-              }
-            ));
-          case FanKind.THUNK:
-            throw "Impossible to have a thunk here.";
+        if (isNat(x)) {
+          return E(A(n, x));
+        } else {
+          switch (x.t) {
+            case FanKind.FUN:
+              return E(A(A(A(f, x.n), x.a), x.b));
+            case FanKind.APP:
+              return E(A(A(a, x.f), x.x));
+            case FanKind.PIN:
+              // PIN p -> rul (LN 0) args (pinBody args $ pinItem p)
+              //            where args = (trueArity $ pinItem p)
+              let args = trueArity(x.i);
+              return E(A(A(A(f, 0n), args), rebuildPinBody(args, x.i)));
+            case FanKind.ROW:
+              // TODO: beautify this and change the function type.
+              return E(rowWut(
+                x.r,
+                function goLaw(nm, ar, bd) {
+                  return E(A(A(A(f, nm), ar), bd));
+                },
+                function goApp(g : Fan, y : Fan) : Fan {
+                  return E(A(A(a, g), y));
+                }));
+            case FanKind.COW:
+              return E(A(A(A(f, 0n), x.z + 1n), 0n));
+            case FanKind.THUNK:
+              throw "Impossible to have a thunk here.";
+          }
         }
       }
       case 2n: {
@@ -165,25 +166,42 @@ function subst(fun:Fan, args:Fan[]) : Fan {
         if (xn == 0n) {
           return E(z);
         } else {
-          let res = A(p, N(xn - 1n));
+          let res = A(p, xn - 1n);
           return E(res);
         }
       }
-      case 3n:
-        return N(valNat(args[0]) + 1n);
+      case 3n: {
+//        console.log("case 3n");
+        return valNat(args[0]) + 1n;
+      }
 
       default:
-        return N(0n);
+        return 0n;
+    }
+  }
+
+  switch (fun.t) {
+    case FanKind.FUN: {
+      return E(fun.x.apply(fun, args));
+    }
+    case FanKind.PIN: {
+      return whnf(fun.x.apply(fun.i, args));
+    }
+    case FanKind.ROW: {
+      return mkCow(fun.r.length);
+    }
+    case FanKind.COW: {
+      return mkRow(args);
     }
   }
 
   throw 'impossible'; // THUNK or APP
-  return N(0n);
+  return 0n;
 }
 
 export function trueArity(x:Fan) : Nat {
-  if (x.t == FanKind.DAT && x.d.t == DatKind.COW) {
-    return x.d.z + 1n;
+  if (isCow(x)) {
+    return x.z + 1n;
   }
 
   return rawArity(x);
@@ -196,26 +214,36 @@ export function trueArity(x:Fan) : Nat {
 export function rawArity(x:Fan) : Nat {
   var depth = 0n;
   while (true) {
-    if (x.t == FanKind.APP) {
-      let head = x.f;
-      x = head;
-      depth++;
-      continue;
-    }
-    if (x.t == FanKind.DAT) {
-      return datArity(x.d) - depth;
-    }
-    if (x.t == FanKind.NAT) {
-      switch (x.v) {
+    if (isNat(x)) {
+      switch (x) {
         case 0n: return (3n - depth);
         case 1n: return (4n - depth);
         case 2n: return (3n - depth);
         default: return (1n - depth);
       }
     }
-    if (x.t == FanKind.FUN) {
-      return (x.a - depth);
+    switch (x.t) {
+      case FanKind.APP: {
+        let head = x.f;
+        x = head;
+        depth++;
+        continue;
+      }
+      case FanKind.FUN: {
+        return (x.a - depth);
+      }
+      case FanKind.PIN: {
+        // TODO: Write this iteratively.
+        return rawArity(x.i) - depth;
+      }
+      case FanKind.ROW: {
+        return 1n - depth;
+      }
+      case FanKind.COW: {
+        return x.z - depth;
+      }
     }
+
     if (x.t == FanKind.THUNK && x.r !== null) {
       x = x.r;
       continue;
@@ -233,10 +261,10 @@ export function rawArity(x:Fan) : Nat {
   at all.
 */
 export function mkApp(f:Fan, x:Fan) : Fan {
-  if (f.t == FanKind.THUNK) {
+  if (isThunk(f)) {
     return mkThunk(function() {
       let res = mkApp(E(f),x);
-      if (res.t == FanKind.THUNK && res.x !== null) {
+      if (isThunk(res) && res.x !== null) {
         res.x();
         res.x = null;
         return res.r as Fan;
@@ -255,8 +283,6 @@ export function mkApp(f:Fan, x:Fan) : Fan {
 
   return { t:FanKind.APP, f:f, x:x };
 }
-
-export function mkNat(v:Nat) : Fan { return { t:FanKind.NAT, v:v } }
 
 export function mkThunk(exe : (() => Fan)) : Fan {
   let t : any = { t: FanKind.THUNK, x: null, r:null }
@@ -277,7 +303,7 @@ export function mkThunk(exe : (() => Fan)) : Fan {
 // Returns the current value, or if an unexecuted thunk, executes it and
 // returns the one step forced value.
 export function whnf(f : Fan) : Fan {
-  while (f.t == FanKind.THUNK) {
+  while (isThunk(f)) {
     if (f.x !== null) {
       f.x();
       f.x = null;
@@ -363,28 +389,28 @@ export function fanToRun(argc : number,
   function recurse(refs : string[], val : Fan) : Run {
     val = whnf(val);
 
-    if (val.t == FanKind.NAT && Number(val.v) < refs.length) {
-      return {t: RunKind.REF, r: refs[Number(val.v)]};
+    if (isNat(val) && Number(val) < refs.length) {
+      return {t: RunKind.REF, r: refs[Number(val)]};
     }
 
-    if (val.t == FanKind.APP) {
+    if (isApp(val)) {
       val.f = whnf(val.f);
 
-      if (val.f.t == FanKind.NAT) {
+      if (isNat(val.f)) {
         // If the toplevel `val` is `(2 x)`:
-        if (val.f.v == 2n) {
+        if (val.f == 2n) {
           return {t: RunKind.CNS, c: val.x };
         }
       } else if (val.f.t == FanKind.APP) {
-        if (val.f.f.t == FanKind.NAT) {
+        if (isNat(val.f.f)) {
           // If the toplevel `val` is `(0 f x)`:
-          if (val.f.f.v == 0n) {
+          if (val.f.f == 0n) {
             return {t: RunKind.KAL,
                     f: recurse(refs, val.f.x),
                     x: recurse(refs, val.x)};
           }
           // If the toplevel `val` is `(1 v b)`:
-          if (val.f.f.v == 1n) {
+          if (val.f.f == 1n) {
             let name = gensym();
             let pushedRefs = [...refs, name];
 
@@ -445,10 +471,9 @@ function optimize(r : Run) : Opt {
       let call = stack.reverse();
       if (call.length == 4 &&
           call[0].t == OptKind.CNS &&
-          call[0].c.t == FanKind.DAT &&
-          call[0].c.d.t == DatKind.PIN &&
-        call[0].c.d.i.t == FanKind.FUN) {
-        let bn = buildName(call[0].c.d.i.n);
+          isPin(call[0].c) &&
+          isFun(call[0].c.i)) {
+        let bn = buildName(call[0].c.i.n);
         if (bn == "_if") {
           return { t: OptKind.IF,
                    raw: { t: OptKind.KAL, f:call },
@@ -639,23 +664,21 @@ export function compile(name : bigint, args : bigint, fanBody : Fan)
 }
 
 function isNatEq(f : Fan, i : bigint) {
-  return f.t == FanKind.NAT && f.v == i;
+  return isNat(f) && f == i;
 }
 
 function matchPinFromFan(n:bigint, a:{ f:Fan, x:Fan } )
-: { t: FanKind.DAT; d: { t:DatKind.PIN; i:Fan; x:(f : Fan[]) => Fan }} | null
+  : { t: FanKind.PIN; i:Fan; x:(f : Fan[]) => Fan } | null
 {
   while (true) {
     // matchPin 0 (APP (NAT 2) x)                             = Just x
     if (n == 0n) {
       if (isNatEq(a.f, 2n)) {
-        if (a.x.t == FanKind.FUN) {
-          return { t:FanKind.DAT, d:{ t:DatKind.PIN, i:a.x, x:a.x.x } };
+        if (isFun(a.x)) {
+          return { t:FanKind.PIN, i:a.x, x:a.x.x };
         } else {
-          return { t:FanKind.DAT,
-                   d:{ t:DatKind.PIN, i:a.x,
-                       x: ((f:Fan[]) => { return AP(a.x, ...f); })
-                     } };
+          return { t:FanKind.PIN, i:a.x,
+                   x: ((f:Fan[]) => { return AP(a.x, ...f); }) };
         }
       } else {
         return null;
@@ -665,9 +688,9 @@ function matchPinFromFan(n:bigint, a:{ f:Fan, x:Fan } )
     //            a    a.f  a.f.f   a.f.x      a.x
     // matchPin n (APP (APP (NAT 0) (PLN _ x)) (AT m)) | n==m = matchPin (n-1) x
     if (isNatEq(a.x, n) && // n==m
-        a.f.t == FanKind.APP &&
+        isApp(a.f) &&
         isNatEq(a.f.f, 0n) &&
-        a.f.x.t == FanKind.APP) {
+        isApp(a.f.x)) {
       n = n - 1n;
       a = a.f.x;
       continue;
@@ -681,7 +704,7 @@ function matchPinFromFan(n:bigint, a:{ f:Fan, x:Fan } )
 // the normal execution.
 function matchJetPin(body : Fan) : Fun | null
 {
-  if (body.t != FanKind.FUN) {
+  if (!isFun(body)) {
     return null;
   }
 
@@ -692,101 +715,101 @@ function matchJetPin(body : Fan) : Fun | null
     return function dec(a : Fan) {
       let n = valNat(a);
       if (n == 0n) {
-        return N(0n);
+        return 0n;
       } else {
-        return N(n - 1n);
+        return n - 1n;
       }
     }
   } else if (bodyName == "add") {
     return function add(b : Fan, a : Fan) {
-      return N(valNat(b) + valNat(a));
+      return valNat(b) + valNat(a);
     }
   } else if (bodyName == "mul") {
     return function mul(b : Fan, a : Fan) {
-      return N(valNat(b) * valNat(a));
+      return valNat(b) * valNat(a);
     }
   } else if (bodyName == "sub") {
     return function sub(b : Fan, a : Fan) {
       let x = valNat(a);
       let y = valNat(b);
       if (y > x) {
-        return N(0n);
+        return 0n;
       } else {
-        return N(x - y);
+        return x - y;
       }
     }
   } else if (bodyName == "bex") {
     return function bex(a : Fan) {
-      return N(2n ** valNat(a));
+      return 2n ** valNat(a);
     }
   } else if (bodyName == "lte") {
     return function lte(b : Fan, a : Fan) {
       if (valNat(a) <= valNat(b)) {
-        return N(1n);
+        return 1n;
       } else {
-        return N(0n);
+        return 0n;
       }
     }
   } else if (bodyName == "lth") {
     return function lth(b : Fan, a : Fan) {
       if (valNat(a) < valNat(b)) {
-        return N(1n);
+        return 1n;
       } else {
-        return N(0n);
+        return 0n;
       }
     }
   } else if (bodyName == "div") {
     return function div(b : Fan, a : Fan) {
       let yv = valNat(b);
       if (yv == 0n) {
-        return N(0n);
+        return 0n;
       } else {
-        return N(valNat(a) / yv);
+        return valNat(a) / yv;
       }
     }
   } else if (bodyName == "mod") {
     return function mod(b : Fan, a : Fan) {
-      return N(valNat(a) % valNat(b));
+      return valNat(a) % valNat(b);
     }
   } else if (bodyName == "aeq") {
     return function aeq(b : Fan, a : Fan) {
       if (valNat(a) == valNat(b)) {
-        return N(1n);
+        return 1n;
       } else {
-        return N(0n);
+        return 0n;
       }
     }
   } else if (bodyName == "lsh") {
     return function lsh(b : Fan, a : Fan) {
-      return N(valNat(a) << valNat(b));
+      return valNat(a) << valNat(b);
     }
   } else if (bodyName == "rsh") {
     return function rsh(b : Fan, a : Fan) {
-      return N(valNat(a) >> valNat(b));
+      return valNat(a) >> valNat(b);
     }
   } else if (bodyName == "mix") {
     return function mix(b : Fan, a : Fan) {
-      return N(valNat(a) ^ valNat(b));
+      return valNat(a) ^ valNat(b);
     }
   } else if (bodyName == "con") {
     return function con(b : Fan, a : Fan) {
-      return N(valNat(a) | valNat(b));
+      return valNat(a) | valNat(b);
     }
   } else if (bodyName == "dis") {
     return function dis(b : Fan, a : Fan) {
-      return N(valNat(a) & valNat(b));
+      return valNat(a) & valNat(b);
     }
 
   // Row jets
   } else if (bodyName == "isRow") {
     return function _isRow(a : Fan) {
-      return isRow(E(a)) ? N(1n) : N(0n);
+      return isRow(E(a)) ? 1n : 0n;
     }
   } else if (bodyName == "idx") {
     return function idx(this : FanFun, v : Fan, i : Fan ) {
       v = E(v);
       if (isRow(v)) {
-        return v.d.r[Number(valNat(i))];
+        return v.r[Number(valNat(i))];
       }
 
       // TODO: Remove callFun in jet impls.
@@ -796,7 +819,7 @@ function matchJetPin(body : Fan) : Fun | null
     return function get(this : FanFun, i : Fan, v : Fan ) {
       v = E(v);
       if (isRow(v)) {
-        return v.d.r[Number(valNat(i))];
+        return v.r[Number(valNat(i))];
       }
 
       // TODO: Remove callFun in jet impls.
@@ -806,7 +829,7 @@ function matchJetPin(body : Fan) : Fun | null
     return function drop(this : FanFun, a : Fan) {
       a = E(a);
       if (isRow(a)) {
-        return N(BigInt(a.d.r.length));
+        return BigInt(a.r.length);
       }
 
       return callFun(this.x, this, [a]);
@@ -816,7 +839,7 @@ function matchJetPin(body : Fan) : Fun | null
       a = E(a);
       b = E(b);
       if (isRow(a) && isRow(b)) {
-        return mkRow([...a.d.r, ...b.d.r]);
+        return mkRow([...a.r, ...b.r]);
       }
 
       return callFun(this.x, this, [b, a]);
@@ -826,7 +849,7 @@ function matchJetPin(body : Fan) : Fun | null
       a = E(a);
       b = E(b);
       if (isRow(b)) {
-        return mkRow(b.d.r.map(function (x) {
+        return mkRow(b.r.map(function (x) {
           return E(A(a, x));
         }));
       }
@@ -839,7 +862,7 @@ function matchJetPin(body : Fan) : Fun | null
       a = E(a);
       b = E(b);
       if (isRow(b)) {
-        return mkRow(b.d.r.slice(0, Number(valNat(a))));
+        return mkRow(b.r.slice(0, Number(valNat(a))));
       }
 
       return callFun(this.x, this, [b, a]);
@@ -849,7 +872,7 @@ function matchJetPin(body : Fan) : Fun | null
       a = E(a);
       b = E(b);
       if (isRow(b)) {
-        return mkRow(b.d.r.slice(Number(valNat(a))));
+        return mkRow(b.r.slice(Number(valNat(a))));
       }
 
       return callFun(this.x, this, [b, a]);
@@ -860,10 +883,10 @@ function matchJetPin(body : Fan) : Fun | null
       if (isRow(a)) {
         let valid = true;
         let arrays = [];
-        for (let x of a.d.r) {
+        for (let x of a.r) {
           x = E(x);
           if (isRow(x)) {
-            arrays.push(x.d.r);
+            arrays.push(x.r);
           } else {
             valid = false;
             break;
@@ -888,11 +911,11 @@ function matchJetPin(body : Fan) : Fun | null
       a = E(a);
       if (isRow(a)) {
         let nats : Nat[] = [];
-        for (let x of a.d.r) {
+        for (let x of a.r) {
           // Validate that each item is a good number.
           x = whnf(x);
-          if (x.t == FanKind.NAT && x.v > 0n && x.v < 256n) {
-            nats.push(x.v);
+          if (isNat(x) && x > 0n && x < 256n) {
+            nats.push(x);
           } else {
             // Fallback.
             return callFun(this.x, this, [a]);
@@ -907,10 +930,9 @@ function matchJetPin(body : Fan) : Fun | null
 
         var hexStr = nats.map(dec2hex).join('');
         let b = BigInt('0x' + hexStr)
-        let n = N(b);
         let str = bigintConversion.bigintToText(b);
         console.log("str:", str);
-        return n;
+        return b;
       }
       return callFun(this.x, this, [a]);
     }
@@ -926,14 +948,14 @@ export function mkFun(name : bigint, args : bigint, body : Fan) : Fan {
       if (args == 1n) {
         return mkRow([]);
       } else {
-        return { t:FanKind.DAT, d:{ t:DatKind.COW, z:(args - 1n) } };
+        return { t: FanKind.COW, z:(args - 1n) };
       }
-    } else if (body.t == FanKind.APP) {
+    } else if (isApp(body)) {
       let m = matchPinFromFan(args, body);
       if (m !== null) {
-        let jetFun = matchJetPin(m.d.i);
+        let jetFun = matchJetPin(m.i);
         if (jetFun !== null) {
-          m.d.x = jetFun;
+          m.x = jetFun;
         }
 
         return m;
@@ -954,21 +976,19 @@ export function mkFun(name : bigint, args : bigint, body : Fan) : Fan {
 
 // -----------------------------------------------------------------------
 
-// TODO: We now need to redo this again. Forcing needs to change values at each
-// layer from the thunks to the returned values.
 export function force(val : Fan) : Fan {
   val = whnf(val);
 
-  if (val.t == FanKind.APP) {
-    if (val.f.t == FanKind.THUNK)
+  if (isApp(val)) {
+    if (isThunk(val.f))
       val.f = force(val.f);
-    if (val.x.t == FanKind.THUNK)
+    if (isThunk(val.x))
       val.x = force(val.x);
   }
-  if (val.t == FanKind.DAT && val.d.t == DatKind.ROW) {
-    for (let i in val.d.r) {
-      if (val.d.r[i].t == FanKind.THUNK)
-        val.d.r[i] = force(val.d.r[i]);
+  if (isRow(val)) {
+    for (let i in val.r) {
+      if (isThunk(val.r[i]))
+        val.r[i] = force(val.r[i]);
     }
   }
 
@@ -978,8 +998,8 @@ export function force(val : Fan) : Fan {
 function valNat(val : Fan) : Nat {
   val = whnf(val);
 
-  if (val.t == FanKind.NAT) {
-    return val.v;
+  if (isNat(val)) {
+    return val;
   } else {
     return 0n;
   }

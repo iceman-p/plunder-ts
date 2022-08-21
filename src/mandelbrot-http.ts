@@ -11,7 +11,6 @@ const app = express();
 function E(val:Fan)          : Fan { return p.whnf(val);       }
 function F(val:Fan)          : Fan { return p.force(val);      }
 function A(fun:Fan, arg:Fan) : Fan { return p.mkApp(fun, arg); }
-function N(nat:Nat)          : Fan { return p.mkNat(nat);      }
 
 function R(...i:s.ExportType[]) : Fan { return E(s.arrayToExport(i)); }
 

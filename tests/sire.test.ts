@@ -7,30 +7,29 @@ import { sire } from '../src/sire';
 function E(val:Fan)          : Fan { return p.whnf(val);       }
 function F(val:Fan)          : Fan { return p.force(val);      }
 function A(fun:Fan, arg:Fan) : Fan { return p.mkApp(fun, arg); }
-function N(nat:Nat)          : Fan { return p.mkNat(nat);      }
 
 function R(...i:s.ExportType[]) : Fan { return E(s.arrayToExport(i)); }
 
 describe('test the haskell sire integration', () => {
   test('parse nat', () => {
-    expect(s.parse(5n)).toStrictEqual(N(5n));
+    expect(s.parse(5n)).toStrictEqual(5n);
   });
 
   test('parse app', () => {
-    expect(s.parse([2n, 5n])).toStrictEqual(A(N(2n), N(5n)));
+    expect(s.parse([2n, 5n])).toStrictEqual(A(2n, 5n));
   });
 
   test('parse long app', () => {
     expect(s.parse([1n, 2n, 3n, 4n]))
-      .toStrictEqual(A(A(A(N(1n), N(2n)), N(3n)), N(4n)));
+      .toStrictEqual(A(A(A(1n, 2n), 3n), 4n));
   });
 
   test('parse nesting', () => {
     // toString() because of functions.
     expect(s.parse([2n, [2n, 3n], [4n, 5n]]).toString())
-      .toStrictEqual(A(A(N(2n),
-                         A(N(2n), N(3n))),
-                       A(N(4n), N(5n))).toString());
+      .toStrictEqual(A(A(2n,
+                         A(2n, 3n)),
+                       A(4n, 5n)).toString());
   });
 });
 

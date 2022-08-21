@@ -4,7 +4,6 @@ import * as p from '../src/index';
 
 function F(val:Fan)          : Fan { return p.force(val);      }
 function A(fun:Fan, arg:Fan) : Fan { return p.mkApp(fun, arg); }
-function N(nat:Nat)          : Fan { return p.mkNat(nat);      }
 
 export type ExportType =
     | bigint
@@ -14,7 +13,7 @@ export type ExportType =
 export function parse(e:ExportType) : Fan {
     let f : Fan;
     if (typeof e === 'bigint') {
-        f = N(e);
+        f = e;
     } else if (Array.isArray(e)) {
         f = arrayToExport(e);
     } else {
@@ -41,17 +40,17 @@ export function run(debug:string, e:ExportType) {
 export function runpin(debug:string, e:ExportType) {
 //    console.log("runpin(" + debug + ")");
     let raw = F(parse(e));
-    let wrap = p.mkApp(N(2n), raw);
+    let wrap = p.mkApp(2n, raw);
     let arity = p.rawArity(raw);
 
     // A pin simply calls its arguments. For f(a, b, c), it calls an inner
     // values with (a, b, c). Therefore we have to build that here.
     for (let i = 1n; i <= arity; ++i) {
-        wrap = arrayToExport([0n, wrap, N(i)]);
+        wrap = arrayToExport([0n, wrap, i]);
     }
 
     // Are these in the right order now?
-    let final = F(arrayToExport([0n, 0n, N(arity), wrap]));
+    let final = F(arrayToExport([0n, 0n, arity, wrap]));
     // console.log("arity: ", arity, "raw: ", raw, "wrap: ", wrap, "final: ", final);
 
     return final

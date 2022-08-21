@@ -1,20 +1,12 @@
 
 export enum FanKind {
   APP = 1,
-  NAT,
   FUN,
   THUNK,
-  DAT,
-}
-
-export enum DatKind {
   PIN,
   ROW,
-  TAB,
-  BAR,
-  COW,
-  CAB
-};
+  COW
+}
 
 export type Nat = bigint;
 
@@ -26,17 +18,13 @@ export type Fun = any;
 export type FanFun = { t: FanKind.FUN; n:Nat; a:Nat; b:Fan; x:Fun }
 
 export type Fan =
+  | Nat
   | { t: FanKind.APP; f:Fan; x:Fan }
-  | { t: FanKind.NAT; v:Nat }
   | { t: FanKind.FUN; n:Nat; a:Nat; b:Fan; x:Fun }
   | { t: FanKind.THUNK; x:((() => void) | null); r:(Fan | null) }
-  | { t: FanKind.DAT; d:Dat }
-
-export type Dat =
-  | { t: DatKind.PIN; i:Fan; x:Fun }
-  | { t: DatKind.ROW; r:Fan[] }
-  | { t: DatKind.COW; z:Nat }
-
+  | { t: FanKind.PIN; i:Fan; x:Fun }
+  | { t: FanKind.ROW; r:Fan[] } // Next, hoist this up top.
+  | { t: FanKind.COW; z:Nat }
 
 
 // Local Variables:
