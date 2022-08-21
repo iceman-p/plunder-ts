@@ -24,11 +24,7 @@ function datArity(dat:Dat) : Nat {
 function datEval(dat:Dat, args:Fan[]) : Fan {
   switch (dat.t) {
     case DatKind.PIN:
-      let ret = dat.x.apply(dat.i, args);
-      while (ret.t == FanKind.THUNK) {
-        ret.x();
-      }
-      return ret;
+      return whnf(dat.x.apply(dat.i, args));
     case DatKind.ROW:
       return mkCow(dat.r.length);
     case DatKind.COW:
@@ -104,17 +100,21 @@ function callFun(f:Fun, _this:Fan, args:Fan[]) : Fan {
   Collect all the arguments and execute `f`.
 */
 function subst(fun:Fan, args:Fan[]) : Fan {
+  while (fun.t == FanKind.THUNK) {
+    if (fun.r !== null) {
+      fun = fun.r;
+    } else {
+      throw "impossible to subst an unexec thunk";
+    }
+  }
+
   while (fun.t == FanKind.APP) {
     args.push(fun.x);
     fun = fun.f;
   }
 
   if (fun.t == FanKind.FUN) {
-    let ret = fun.x.apply(fun, args);
-    while (ret.t == FanKind.THUNK) {
-      ret.x();
-    }
-    return ret;
+    return E(fun.x.apply(fun, args));
   }
 
   if (fun.t == FanKind.DAT) {
@@ -135,7 +135,7 @@ function subst(fun:Fan, args:Fan[]) : Fan {
         let n = args[1];
         let x = args[0];
 
-        E(x);
+        x = E(x);
         switch (x.t) {
           case FanKind.FUN:
             return E(A(A(A(f, N(x.n)), N(x.a)), x.b));
@@ -216,6 +216,10 @@ export function rawArity(x:Fan) : Nat {
     if (x.t == FanKind.FUN) {
       return (x.a - depth);
     }
+    if (x.t == FanKind.THUNK && x.r !== null) {
+      x = x.r;
+      continue;
+    }
     return 0n;
   };
 }
@@ -232,8 +236,13 @@ export function mkApp(f:Fan, x:Fan) : Fan {
   if (f.t == FanKind.THUNK) {
     return mkThunk(function() {
       let res = mkApp(E(f),x);
-      if (res.t == FanKind.THUNK) { res.x(); }
-      return res;
+      if (res.t == FanKind.THUNK && res.x !== null) {
+        res.x();
+        res.x = null;
+        return res.r as Fan;
+      } else {
+        return res;
+      }
     });
   }
 
@@ -250,25 +259,34 @@ export function mkApp(f:Fan, x:Fan) : Fan {
 export function mkNat(v:Nat) : Fan { return { t:FanKind.NAT, v:v } }
 
 export function mkThunk(exe : (() => Fan)) : Fan {
-  let t = { t: FanKind.THUNK, x: function () {} }
+  let t : any = { t: FanKind.THUNK, x: null, r:null }
 
   t.x = function () {
-    let v = exe();
-    let th = (t as any);  // Now that lazy evaluation is actually
-    // happening, the `x` field was being left on
-    // the result.
-    delete th.x;
-    Object.assign(t, v);
+    if (t.r === null) {
+      let th = (t as any);
+      th.r = exe();
+      th.x = null;
+    } else {
+      throw "Attempted to double call a thunk";
+    }
   }
 
   return (t as Fan);
 }
 
-// Check to ensure a Fan is forced. This is not the "public" force() function
-// that does full forcing, but a thing used to force the current top layer.
+// Returns the current value, or if an unexecuted thunk, executes it and
+// returns the one step forced value.
 export function whnf(f : Fan) : Fan {
   while (f.t == FanKind.THUNK) {
-    f.x();
+    if (f.x !== null) {
+      f.x();
+      f.x = null;
+      f = f.r as unknown as Fan;
+    } else if (f.r !== null) {
+      f = f.r;
+    } else {
+      throw "Impossible thunk"
+    }
   }
   return f;
 }
@@ -343,18 +361,14 @@ export function fanToRun(argc : number,
   let topLets : TopRunLet[] = [];
 
   function recurse(refs : string[], val : Fan) : Run {
-    while (val.t == FanKind.THUNK) {
-      val.x();
-    }
+    val = whnf(val);
 
     if (val.t == FanKind.NAT && Number(val.v) < refs.length) {
       return {t: RunKind.REF, r: refs[Number(val.v)]};
     }
 
     if (val.t == FanKind.APP) {
-      while (val.f.t == FanKind.THUNK) {
-        val.f.x();
-      }
+      val.f = whnf(val.f);
 
       if (val.f.t == FanKind.NAT) {
         // If the toplevel `val` is `(2 x)`:
@@ -770,7 +784,7 @@ function matchJetPin(body : Fan) : Fun | null
     }
   } else if (bodyName == "idx") {
     return function idx(this : FanFun, v : Fan, i : Fan ) {
-      E(v);
+      v = E(v);
       if (isRow(v)) {
         return v.d.r[Number(valNat(i))];
       }
@@ -780,7 +794,7 @@ function matchJetPin(body : Fan) : Fun | null
     }
   } else if (bodyName == "get") {
     return function get(this : FanFun, i : Fan, v : Fan ) {
-      E(v);
+      v = E(v);
       if (isRow(v)) {
         return v.d.r[Number(valNat(i))];
       }
@@ -790,7 +804,7 @@ function matchJetPin(body : Fan) : Fun | null
     }
   } else if (bodyName == "len") {
     return function drop(this : FanFun, a : Fan) {
-      E(a);
+      a = E(a);
       if (isRow(a)) {
         return N(BigInt(a.d.r.length));
       }
@@ -799,8 +813,8 @@ function matchJetPin(body : Fan) : Fun | null
     }
   } else if (bodyName == "weld") {
     return function weld(this : FanFun, b : Fan, a : Fan) {
-      E(a);
-      E(b);
+      a = E(a);
+      b = E(b);
       if (isRow(a) && isRow(b)) {
         return mkRow([...a.d.r, ...b.d.r]);
       }
@@ -809,8 +823,8 @@ function matchJetPin(body : Fan) : Fun | null
     }
   } else if (bodyName == "map") {
     return function map(this : FanFun, b : Fan, a : Fan) {
-      E(a);
-      E(b);
+      a = E(a);
+      b = E(b);
       if (isRow(b)) {
         return mkRow(b.d.r.map(function (x) {
           return E(A(a, x));
@@ -822,8 +836,8 @@ function matchJetPin(body : Fan) : Fun | null
   // TODO: put
   } else if (bodyName == "take") {
     return function take(this : FanFun, b : Fan, a : Fan) {
-      E(a);
-      E(b);
+      a = E(a);
+      b = E(b);
       if (isRow(b)) {
         return mkRow(b.d.r.slice(0, Number(valNat(a))));
       }
@@ -832,8 +846,8 @@ function matchJetPin(body : Fan) : Fun | null
     }
   } else if (bodyName == "drop") {
     return function drop(this : FanFun, b : Fan, a : Fan) {
-      E(a);
-      E(b);
+      a = E(a);
+      b = E(b);
       if (isRow(b)) {
         return mkRow(b.d.r.slice(Number(valNat(a))));
       }
@@ -842,12 +856,12 @@ function matchJetPin(body : Fan) : Fun | null
     }
   } else if (bodyName == "cat") {
     return function drop(this : FanFun, a : Fan) {
-      E(a);
+      a = E(a);
       if (isRow(a)) {
         let valid = true;
         let arrays = [];
         for (let x of a.d.r) {
-          E(x);
+          x = E(x);
           if (isRow(x)) {
             arrays.push(x.d.r);
           } else {
@@ -871,12 +885,12 @@ function matchJetPin(body : Fan) : Fun | null
     // TODO: As mentioned in the haskell implementation, you probably don't
     // want to have this jet and should be using a bar now that it exists.
     return function cordFromRow(this : FanFun, a : Fan) {
-      E(a);
+      a = E(a);
       if (isRow(a)) {
         let nats : Nat[] = [];
         for (let x of a.d.r) {
           // Validate that each item is a good number.
-          whnf(x);
+          x = whnf(x);
           if (x.t == FanKind.NAT && x.v > 0n && x.v < 256n) {
             nats.push(x.v);
           } else {
@@ -931,7 +945,7 @@ export function mkFun(name : bigint, args : bigint, body : Fan) : Fan {
   let fun = compile(name, args, body);
   if (args == 0n) {
     let execu = () => { throw "Infinite Loop"; }
-    let thunk = {t: FanKind.THUNK, x:execu} as Fan
+    let thunk = {t: FanKind.THUNK, x:execu, r:null} as Fan
     return fun([thunk]);
   } else {
     return {t: FanKind.FUN, n:name, a:args, b: body, x: fun};
@@ -940,32 +954,29 @@ export function mkFun(name : bigint, args : bigint, body : Fan) : Fan {
 
 // -----------------------------------------------------------------------
 
+// TODO: We now need to redo this again. Forcing needs to change values at each
+// layer from the thunks to the returned values.
 export function force(val : Fan) : Fan {
-  let stack : Fan[] = [val]
-  while (stack.length > 0) {
-    let cur = stack.pop()!;
+  val = whnf(val);
 
-    while (cur.t == FanKind.THUNK) {
-      cur.x();
-    }
-
-    if (cur.t == FanKind.APP) {
-      stack.push(cur.f);
-      stack.push(cur.x);
-    }
-    if (cur.t == FanKind.DAT && cur.d.t == DatKind.ROW) {
-      for (let x of cur.d.r) {
-        stack.push(x);
-      }
+  if (val.t == FanKind.APP) {
+    if (val.f.t == FanKind.THUNK)
+      val.f = force(val.f);
+    if (val.x.t == FanKind.THUNK)
+      val.x = force(val.x);
+  }
+  if (val.t == FanKind.DAT && val.d.t == DatKind.ROW) {
+    for (let i in val.d.r) {
+      if (val.d.r[i].t == FanKind.THUNK)
+        val.d.r[i] = force(val.d.r[i]);
     }
   }
+
   return val;
 }
 
 function valNat(val : Fan) : Nat {
-  while (val.t == FanKind.THUNK) {
-    val.x();
-  }
+  val = whnf(val);
 
   if (val.t == FanKind.NAT) {
     return val.v;

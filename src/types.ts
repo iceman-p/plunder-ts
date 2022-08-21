@@ -29,7 +29,7 @@ export type Fan =
   | { t: FanKind.APP; f:Fan; x:Fan }
   | { t: FanKind.NAT; v:Nat }
   | { t: FanKind.FUN; n:Nat; a:Nat; b:Fan; x:Fun }
-  | { t: FanKind.THUNK; x:() => void }
+  | { t: FanKind.THUNK; x:((() => void) | null); r:(Fan | null) }
   | { t: FanKind.DAT; d:Dat }
 
 export type Dat =
