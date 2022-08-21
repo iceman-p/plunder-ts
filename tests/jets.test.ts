@@ -26,7 +26,7 @@ describe('test data jet matching', () => {
 
     test('calling constructor makes row', () => {
       expect(R(sire.cow, 4n, 4n, 3n, 2n, 1n)).toStrictEqual(
-        p.mkRow([1n, 2n, 3n, 4n]));
+        [1n, 2n, 3n, 4n]);
     });
 
     test('row constructor identity eq', () => {
@@ -57,29 +57,33 @@ describe('test data jet matching', () => {
       expect(R(sire.isRow, [sire.cow, 1n, 5n])).toStrictEqual(1n);
     });
 
+    test('cow to row', () => {
+      expect(R(sire.cow, 1n, 5n)).toStrictEqual([5n]);
+    });
+
     test('weld two rows', () => {
-      expect(F(R(sire.weld, F(R(sire.cow, 1n, 5n)), F(R(sire.cow, 1n, 10n)))))
-        .toStrictEqual({ t: FanKind.ROW, r: [5n, 10n] });
+      expect(F(R(sire.weld, [sire.cow, 1n, 5n], [sire.cow, 1n, 10n])))
+        .toStrictEqual([5n, 10n]);
 
     });
 
     test('take', () => {
-      expect(F(R(sire.take, 2n, F(R(sire.cow, 3n, 3n, 2n, 1n)))))
-        .toStrictEqual({ t: FanKind.ROW, r: [1n, 2n] });
+      expect(F(R(sire.take, 2n, [sire.cow, 3n, 3n, 2n, 1n])))
+        .toStrictEqual([1n, 2n]);
     });
 
     test('drop', () => {
-      expect(F(R(sire.drop, 1n, F(R(sire.cow, 3n, 3n, 2n, 1n)))))
-        .toStrictEqual({ t: FanKind.ROW, r: [2n, 3n] });
+      expect(F(R(sire.drop, 1n, [sire.cow, 3n, 3n, 2n, 1n])))
+        .toStrictEqual([2n, 3n]);
     });
 
     test('map', () => {
-      expect(F(R(sire.map, [sire.add, 1n], F(R(sire.cow, 3n, 3n, 2n, 1n)))))
-        .toStrictEqual({ t: FanKind.ROW, r: [2n, 3n, 4n] });
+      expect(F(R(sire.map, [sire.add, 1n], [sire.cow, 3n, 3n, 2n, 1n])))
+        .toStrictEqual([2n, 3n, 4n]);
     });
 
     test('len', () => {
-      expect(F(R(sire.len, F(R(sire.cow, 3n, 3n, 2n, 1n)))))
+      expect(F(R(sire.len, [sire.cow, 3n, 3n, 2n, 1n])))
         .toStrictEqual(3n);
     });
 

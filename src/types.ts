@@ -4,7 +4,6 @@ export enum FanKind {
   FUN,
   THUNK,
   PIN,
-  ROW,
   COW
 }
 
@@ -19,11 +18,11 @@ export type FanFun = { t: FanKind.FUN; n:Nat; a:Nat; b:Fan; x:Fun }
 
 export type Fan =
   | Nat
+  | Fan[]
   | { t: FanKind.APP; f:Fan; x:Fan }
   | { t: FanKind.FUN; n:Nat; a:Nat; b:Fan; x:Fun }
   | { t: FanKind.THUNK; x:((() => void) | null); r:(Fan | null) }
   | { t: FanKind.PIN; i:Fan; x:Fun }
-  | { t: FanKind.ROW; r:Fan[] } // Next, hoist this up top.
   | { t: FanKind.COW; z:Nat }
 
 
