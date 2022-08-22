@@ -7,9 +7,9 @@ function F(val:Fan)          : Fan { return p.force(val);      }
 function A(fun:Fan, arg:Fan) : Fan { return p.mkApp(fun, arg); }
 
 describe('testing new fanToRun', () => {
-  test('expect this reference', () => {
+  test('expect self reference', () => {
     expect(n.fanToRun(0, 0n)).toStrictEqual(
-      [[], {t: n.RunKind.REF, r:"this"}]);
+      [[], {t: n.RunKind.REF, r:"self"}]);
   });
 
   test('expect `a` reference', () => {
@@ -45,7 +45,13 @@ describe('testing new fanToRun', () => {
 
 describe('testing compiler integration', () => {
   test('compile and run test (1 1 2)', () => {
-    let f = n.compile(0n, 1n, p.mkApp(p.mkApp(1n, 1n), 2n));
+    let name = 0n;
+    let args = 1n;
+    let body = p.mkApp(p.mkApp(1n, 1n), 2n);
+    let execu = () => { throw "Infinite Loop"; }
+    let self = {t: FanKind.FUN, n:name, a:args, b:body, x:execu};
+    let f = n.compile(self as Fan, name, args, body);
+    self.x = f;
     expect(f(30n)).toStrictEqual(30n);
   });
 });

@@ -395,7 +395,7 @@ export function fanToRun(argc : number,
   let gensym = mkGensym();
 
   // Seed the references map with the arguments.
-  let refNames = ["this"];
+  let refNames = ["self"];
   for (let i = 0; i < argc; ++i) {
     refNames.push(gensym());
   }
@@ -612,20 +612,6 @@ function runToFunctionText(strs : string[],
 
     // { t: OptKind.EXE, x: Fun, f: Fan, rs: Opt[] }
     case OptKind.EXE: {
-
-      // Tests pass if this is uncommented and the next paragraph is
-      // commented instead
-      /*
-      if (pos == Position.INNER) {
-        let hed : Opt = {t:OptKind.CNS, c:opt.f}
-        let f: Opt[] = [hed];
-        for (let r of opt.rs) f.push(r);
-        let hak = { t:OptKind.KAL, f:f } as Opt;
-        runToFunctionText(strs, pos, constants, hak);
-        return;
-      }
-      */
-
       if (pos == Position.INNER) {
         strs.push("TH(function(){");
         runToFunctionText(strs, Position.STMT, constants, opt);
@@ -690,6 +676,7 @@ export function optToFunction
     , argc : number
     , lets : TopOptLet[]
     , run  : Opt
+    , self : Fan
     )
 {
   let gensym = mkGensym();
@@ -724,13 +711,13 @@ export function optToFunction
 
   strs.push("}");
 
-  // console.log(strs.join(''));
+  console.log(strs.join(''));
   // console.log(constants);
 
-  let builder = new Function("AP", "valNat", "TH", "$", strs.join('')) as any;
+  let builder = new Function("AP", "valNat", "TH", "$", "self", strs.join('')) as any;
   // TODO: Actually figuring out the type here is wack, and I bet you can't do
   // it without dependent types on `argc`?
-  return builder(AP, valNat, mkThunk, constants);
+  return builder(AP, valNat, mkThunk, constants, self);
 }
 
 let reservedWords = new Set<string>([
@@ -770,7 +757,12 @@ export function buildName(name : bigint) : string {
   return strName;
 }
 
-export function compile(name : bigint, args : bigint, fanBody : Fan)
+export function compile
+    ( self : Fan
+    , name : bigint
+    , args : bigint
+    , fanBody : Fan
+    )
 {
   let argc = Number(args);
   let [toprunlet, runBody] = fanToRun(argc, fanBody);
@@ -782,7 +774,7 @@ export function compile(name : bigint, args : bigint, fanBody : Fan)
       return [name, optimize(run)] });
 
   let strName = buildName(name);
-  return optToFunction(strName, argc, topOptLet, optBody);
+  return optToFunction(strName, argc, topOptLet, optBody, self);
 }
 
 function isNatEq(f : Fan, i : bigint) {
@@ -1086,13 +1078,16 @@ export function mkFun(name : bigint, args : bigint, body : Fan) : Fan {
   }
 
   // Fallback to compiling the body of the law.
-  let fun = compile(name, args, body);
+  let execu = () => { throw "Infinite Loop"; }
   if (args == 0n) {
-    let execu = () => { throw "Infinite Loop"; }
-    let thunk = {t: FanKind.THUNK, x:execu, r:null} as Fan
-    return fun([thunk]);
+    let self = {t: FanKind.THUNK, x:execu, r:null} as Fan
+    let fun = compile(self, name, args, body);
+    return fun([self]);
   } else {
-    return {t: FanKind.FUN, n:name, a:args, b: body, x: fun};
+    let self = {t: FanKind.FUN, n:name, a:args, b: body, x:execu};
+    let fun = compile(self as Fan, name, args, body);
+    self.x = fun;
+    return (self as Fan);
   }
 }
 
