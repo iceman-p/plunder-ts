@@ -556,7 +556,14 @@ function optimize(r : Run) : Opt {
       for (let i=1; i<call.length; i++) { args.push(call[i]); }
       // console.log("EXE", valFun(headFan), args)
       // console.log(valFun(headFan));
-      return { t: OptKind.EXE, x:valFun(headFan), f:headFan, rs:args }
+
+      // TODO Eliminate `f` and have laws know themselves instead.
+      let funSelf : Fan = headFan;
+      while (isPin(funSelf)) {
+        funSelf = funSelf.i;
+      }
+
+      return { t: OptKind.EXE, x:valFun(headFan), f:funSelf, rs:args }
   }
 }
 
@@ -617,6 +624,9 @@ function runToFunctionText(strs : string[],
     // { t: OptKind.EXE, x: Fun, f: Fan, rs: Opt[] }
     case OptKind.EXE: {
 
+      // Tests pass if this is uncommented and the next paragraph is
+      // commented instead
+      /*
       if (pos == Position.INNER) {
         let hed : Opt = {t:OptKind.CNS, c:opt.f}
         let f: Opt[] = [hed];
@@ -625,15 +635,14 @@ function runToFunctionText(strs : string[],
         runToFunctionText(strs, pos, constants, hak);
         return;
       }
+      */
 
-      /*
       if (pos == Position.INNER) {
         strs.push("TH(function(){");
         runToFunctionText(strs, Position.STMT, constants, opt);
         strs.push("})");
         return;
       }
-      */
 
       // TODO If the code for law knows itself (includes itself in
       // constants array).  Then we can replace foo.apply(bar,[x,y,z])
