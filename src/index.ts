@@ -93,7 +93,7 @@ function callFun(f:Fun, _this:Fan, args:Fan[]) : Fan {
 /*
   Given (f, [x]) where (f ... x) is known to be saturated:
 
-  Collect all the arguments and execute `f`.
+  Collect all the arguments and execute the head against them.
 */
 function subst(fun:Fan, args:Fan[]) : Fan {
   while (isThunk(fun)) {
@@ -109,90 +109,121 @@ function subst(fun:Fan, args:Fan[]) : Fan {
     fun = fun.f;
   }
 
-  if (isNat(fun)) {
-    switch(fun) {
-      case 0n: {
-        let n = args[2];
-        let a = args[1];
-        let b = args[0];
-        return mkFun(valNat(n), valNat(a), force(args[0]))
-      }
-      case 1n: {
-        let f = args[3];
-        let a = args[2];
-        let n = args[1];
-        let x = args[0];
+  return valFun(fun).apply(fun, args);
+}
 
-        x = E(x);
-        if (isNat(x)) {
-          return E(A(n, x));
-        } else if (isRow(x)) {
-          // TODO: beautify this and change the function type.
-          return E(rowWut(
-            x,
-            function goLaw(nm, ar, bd) {
-              return E(A(A(A(f, nm), ar), bd));
-            },
-            function goApp(g : Fan, y : Fan) : Fan {
-              return E(A(A(a, g), y));
-            }));
-        } else {
-          switch (x.t) {
-            case FanKind.FUN:
-              return E(A(A(A(f, x.n), x.a), x.b));
-            case FanKind.APP:
-              return E(A(A(a, x.f), x.x));
-            case FanKind.PIN:
-              // PIN p -> rul (LN 0) args (pinBody args $ pinItem p)
-              //            where args = (trueArity $ pinItem p)
-              let args = trueArity(x.i);
-              return E(A(A(A(f, 0n), args), rebuildPinBody(args, x.i)));
-            case FanKind.COW:
-              return E(A(A(A(f, 0n), x.z + 1n), 0n));
-            case FanKind.THUNK:
-              throw "Impossible to have a thunk here.";
-          }
-        }
-      }
-      case 2n: {
-        let z = args[2];
-        let p = args[1];
-        let x = args[0];
-        let xn = valNat(x)
-        if (xn == 0n) {
-          return E(z);
-        } else {
-          let res = A(p, xn - 1n);
-          return E(res);
-        }
-      }
-      case 3n: {
-//        console.log("case 3n");
-        return valNat(args[0]) + 1n;
-      }
+function prim_mkfun(b:Fan, a:Fan, n:Fan) : Fan {
+  return mkFun(valNat(n), valNat(a), force(b));
+}
 
-      default:
-        return 0n;
+function prim_wut(x:Fan, n:Fan, a:Fan, f:Fan) : Fan {
+  x = E(x);
+  if (isNat(x)) {
+    return E(A(n, x));
+  } else if (isRow(x)) {
+    // TODO: beautify this and change the function type.
+    return E(rowWut(
+      x,
+      function goLaw(nm, ar, bd) {
+        return E(A(A(A(f, nm), ar), bd));
+      },
+      function goApp(g : Fan, y : Fan) : Fan {
+        return E(A(A(a, g), y));
+      }));
+  } else {
+    switch (x.t) {
+      case FanKind.FUN:
+        return E(A(A(A(f, x.n), x.a), x.b));
+      case FanKind.APP:
+        return E(A(A(a, x.f), x.x));
+      case FanKind.PIN:
+        // PIN p -> rul (LN 0) args (pinBody args $ pinItem p)
+        //            where args = (trueArity $ pinItem p)
+        let args = trueArity(x.i);
+        return E(A(A(A(f, 0n), args), rebuildPinBody(args, x.i)));
+      case FanKind.COW:
+        return E(A(A(A(f, 0n), x.z + 1n), 0n));
+      case FanKind.THUNK:
+        throw "Impossible to have a thunk here.";
+    }
+  }
+}
+
+function prim_natcase(x:Fan, p:Fan, z:Fan) : Fan {
+  let xn = valNat(x)
+  if (xn == 0n) {
+    return E(z);
+  } else {
+    let res = A(p, xn - 1n);
+    return E(res);
+  }
+}
+
+function prim_increment(x:Fan) : Fan {
+  return valNat(x) + 1n;
+}
+
+function prim_fallback(x:Fan) : Fan {
+  return 0n;
+}
+
+function natFun (nat : Nat) : Fun {
+  switch (nat) {
+  case 0n:
+    return prim_mkfun;
+  case 1n:
+    return prim_wut;
+  case 2n:
+    return prim_natcase;
+  case 3n:
+    return prim_increment;
+  default:
+    return prim_fallback;
+  }
+}
+
+function valFun(val:Fan) : Fun {
+  if (isThunk(val)) {
+    throw "valFun expects a normalized input";
+  }
+
+  if (isApp(val)) {
+    throw "valFun expects something besides an APP.";
+  }
+
+  if (isNat(val)) {
+    return natFun(val);
+  }
+
+  if (isRow(val)) {
+    let sz = BigInt(val.length);
+    return function(x:Fan) : Fan {
+      return { t: FanKind.COW, z:sz };
     }
   }
 
-  if (isRow(fun)) {
-    return mkCow(fun.length);
-  }
-
-  switch (fun.t) {
+  switch (val.t) {
     case FanKind.FUN: {
-      return E(fun.x.apply(fun, args));
+      return val.x;
     }
     case FanKind.PIN: {
-      return whnf(fun.x.apply(fun.i, args));
+      // TODO This is wrong until laws know themselves.
+      return val.x;
+      // TODO Kill this by making laws know their own `self`.
+      // const exe : Fun = val.x;
+      // var itm : Fan = val.i;
+      // return function(...args: Fan[]) : Fan {
+        // return exe.apply(itm, args);
+      // }
     }
     case FanKind.COW: {
-      return args;
+      return function cow (...args: Fan[]): Fan {
+        return args;
+      }
     }
   }
 
-  throw 'impossible'; // THUNK or APP
+  throw 'impossible';
   return 0n;
 }
 
@@ -281,7 +312,7 @@ export function mkApp(f:Fan, x:Fan) : Fan {
   return { t:FanKind.APP, f:f, x:x };
 }
 
-export function mkThunk(exe : (() => Fan)) : Fan {
+function mkThunk(exe : (() => Fan)) : Fan {
   let t : any = { t: FanKind.THUNK, x: null, r:null }
 
   t.x = function () {
@@ -435,6 +466,7 @@ export enum OptKind {
   CNS,
   REF,
   KAL,
+  EXE,
   IF,
 }
 
@@ -446,6 +478,7 @@ export type Opt =
   | { t: OptKind.REF, r: string }
   | { t: OptKind.KAL, f: Opt[] }
   | { t: OptKind.IF, raw:Opt, i:Opt, th:Opt, el:Opt }
+  | { t: OptKind.EXE, x: Fun, f: Fan, rs: Opt[] }
 
 // Collect all let statements in a function and hoist them to the top.
 export type TopOptLet = [string, Opt];
@@ -455,10 +488,13 @@ function optimize(r : Run) : Opt {
   switch (r.t) {
     case RunKind.LOG:
       return { t: OptKind.LOG, l: r.l, r: optimize(r.r) }
+
     case RunKind.CNS:
       return { t: OptKind.CNS, c: r.c };
+
     case RunKind.REF:
       return { t: OptKind.REF, r: r.r };
+
     case RunKind.KAL:
       let stack = [optimize(r.x)];
       let next = r.f;
@@ -467,25 +503,60 @@ function optimize(r : Run) : Opt {
         next = next.f;
       }
       stack.push(optimize(next));
-
       let call = stack.reverse();
-      if (call.length == 4 &&
-          call[0].t == OptKind.CNS &&
-          isPin(call[0].c) &&
-          isFun(call[0].c.i)) {
-        let bn = buildName(call[0].c.i.n);
-        if (bn == "_if") {
+      let head = call[0];
+
+      if (head.t != OptKind.CNS) {
+        return { t: OptKind.KAL, f:call }
+      }
+
+      let headFan : Fan = head.c;
+
+      // TODO We can also handle cases where the arity is less than the
+      // number of arguments by outputing an inner EXE and an outer KAL.
+      if (BigInt(call.length) != (1n + rawArity(headFan))) {
+        return { t: OptKind.KAL, f:call }
+      }
+
+      // Here we are dealing with a saturated call to a constant function.
+
+      // TODO Gross
+      if (isApp(headFan)) {
+          call.reverse();
+          call.pop();
+          while (isApp(headFan)) {
+            call.push({t:OptKind.CNS, c:headFan.x});
+            headFan = headFan.f;
+          }
+          head = {t:OptKind.CNS, c:headFan};
+          call.push(head);
+          call.reverse();
+      }
+
+      if (isPin(head.c) && isFun(head.c.i)) {
+        switch (buildName(head.c.i.n)) {
+        case "_if":
+          // console.log("_if");
           return { t: OptKind.IF,
                    raw: { t: OptKind.KAL, f:call },
                    i:call[1], th:call[2], el:call[3] };
-        } else if (bn == "ifNot") {
+        case "ifNot":
+          // console.log("ifNot");
           return { t: OptKind.IF,
                    raw: { t: OptKind.KAL, f:call },
                    i:call[1], th:call[3], el:call[2] };
+        default:
+          break;
         }
       }
 
-      return { t: OptKind.KAL, f:call }
+      // return { t: OptKind.KAL, f:call }
+
+      let args : Opt[] = [];
+      for (let i=1; i<call.length; i++) { args.push(call[i]); }
+      // console.log("EXE", valFun(headFan), args)
+      // console.log(valFun(headFan));
+      return { t: OptKind.EXE, x:valFun(headFan), f:headFan, rs:args }
   }
 }
 
@@ -499,6 +570,15 @@ function runToFunctionText(strs : string[],
                            pos : Position,
                            constants : Fan[],
                            opt : Opt) {
+  let pushConst = (x: Fan) => {
+    let idx = constants.length;
+    constants.push(x);
+    strs.push("$[");
+    strs.push(idx.toString());
+    strs.push("]");
+    return idx;
+  }
+
   switch (opt.t) {
     case OptKind.LOG:
       if (pos == Position.STMT) {
@@ -516,14 +596,10 @@ function runToFunctionText(strs : string[],
     case OptKind.CNS:
       // TODO: Only start trying to inline nat constants once raw nats are
       // supported in Fan.
-      let idx = constants.length
-      constants.push(opt.c);
       if (pos == Position.STMT) {
         strs.push("return ");
       }
-      strs.push("constants[");
-      strs.push(idx.toString());
-      strs.push("]");
+      pushConst(opt.c)
       if (pos == Position.STMT) {
         strs.push(";\n");
       }
@@ -537,14 +613,55 @@ function runToFunctionText(strs : string[],
         strs.push(";\n");
       }
       return;
+
+    // { t: OptKind.EXE, x: Fun, f: Fan, rs: Opt[] }
+    case OptKind.EXE: {
+
+      if (pos == Position.INNER) {
+        let hed : Opt = {t:OptKind.CNS, c:opt.f}
+        let f: Opt[] = [hed];
+        for (let r of opt.rs) f.push(r);
+        let hak = { t:OptKind.KAL, f:f } as Opt;
+        runToFunctionText(strs, pos, constants, hak);
+        return;
+      }
+
+      /*
+      if (pos == Position.INNER) {
+        strs.push("TH(function(){");
+        runToFunctionText(strs, Position.STMT, constants, opt);
+        strs.push("})");
+        return;
+      }
+      */
+
+      // TODO If the code for law knows itself (includes itself in
+      // constants array).  Then we can replace foo.apply(bar,[x,y,z])
+      // with `foo(x,y,z)` which is likely faster.
+      strs.push("return ");
+      let x_idx = pushConst(opt.x);
+      strs.push(".apply(");
+      let f_idx = pushConst(opt.f)
+      strs.push(", [");
+      for (let i=(opt.rs.length-1); i>-1; i--) {
+        let r = opt.rs[i];
+        runToFunctionText(strs, Position.INNER, constants, r);
+        if (i>0) strs.push(", ");
+      }
+      strs.push("]);");
+      return;
+    }
+
     case OptKind.KAL: {
       if (pos == Position.STMT) {
         strs.push("return ");
       }
       strs.push("AP(");
+      let first = true;
       for (let xf of opt.f) {
+        if (!first) strs.push(",");
         runToFunctionText(strs, Position.INNER, constants, xf);
-        strs.push(",");
+        first = false;
       }
       strs.push(")");
       if (pos == Position.STMT) {
@@ -570,16 +687,22 @@ function runToFunctionText(strs : string[],
 }
 
 // Returns a function meant to be called with `apply(this, args)`.
-export function optToFunction(name : string,
-                              argc : number,
-                              lets : TopOptLet[],
-                              run : Opt) {
+export function optToFunction
+    ( name : string
+    , argc : number
+    , lets : TopOptLet[]
+    , run  : Opt
+    )
+{
   let gensym = mkGensym();
 
   // Constant values need to be passed into the function instead of being in
   // the text because they might be thunks and their evaluation should cause
   // them to be evaluated outside of this function. They could also be very
   // large values and textifying them could be very expensive.
+  //
+  // (Note from Benjamin: they will never be thunks because the body is
+  // forced before creating the function, but they can indeed be huge).
   let constants : Fan[] = [];
 
   // We produce the inner text of a function which given the environment,
@@ -603,12 +726,13 @@ export function optToFunction(name : string,
 
   strs.push("}");
 
-//  console.log(strs.join(''));
+  // console.log(strs.join(''));
+  // console.log(constants);
 
-  let builder = new Function("AP", "valNat", "constants", strs.join('')) as any;
+  let builder = new Function("AP", "valNat", "TH", "$", strs.join('')) as any;
   // TODO: Actually figuring out the type here is wack, and I bet you can't do
   // it without dependent types on `argc`?
-  return builder(AP, valNat, constants);
+  return builder(AP, valNat, mkThunk, constants);
 }
 
 let reservedWords = new Set<string>([
