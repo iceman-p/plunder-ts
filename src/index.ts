@@ -109,7 +109,11 @@ function subst(fun:Fan, args:Fan[]) : Fan {
     fun = fun.f;
   }
 
-  return valFun(fun).apply(fun, args);
+  let self : Fan = fun;
+  while (isPin(self)) { self = self.i; }
+
+  // TODO Have laws know themselves in order to eliminate .apply(self...
+  return valFun(fun).apply(self, args);
 }
 
 function prim_mkfun(b:Fan, a:Fan, n:Fan) : Fan {
@@ -203,24 +207,9 @@ function valFun(val:Fan) : Fun {
   }
 
   switch (val.t) {
-    case FanKind.FUN: {
-      return val.x;
-    }
-    case FanKind.PIN: {
-      // TODO This is wrong until laws know themselves.
-      return val.x;
-      // TODO Kill this by making laws know their own `self`.
-      // const exe : Fun = val.x;
-      // var itm : Fan = val.i;
-      // return function(...args: Fan[]) : Fan {
-        // return exe.apply(itm, args);
-      // }
-    }
-    case FanKind.COW: {
-      return function cow (...args: Fan[]): Fan {
-        return args;
-      }
-    }
+    case FanKind.FUN: return val.x;
+    case FanKind.PIN: return val.x;
+    case FanKind.COW: return function cow (...r: Fan[]): Fan { return r; }
   }
 
   throw 'impossible';
