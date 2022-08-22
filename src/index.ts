@@ -86,8 +86,8 @@ function isNat(a : Fan)
 
 // -----------------------------------------------------------------------
 
-function callFun(f:Fun, _this:Fan, args:Fan[]) : Fan {
-  return E(f.apply(_this, args as any) as Fan);
+function callFun(f:Fun, args:Fan[]) : Fan {
+  return E(f.apply(null, args as any) as Fan);
 }
 
 /*
@@ -109,11 +109,8 @@ function subst(fun:Fan, args:Fan[]) : Fan {
     fun = fun.f;
   }
 
-  let self : Fan = fun;
-  while (isPin(self)) { self = self.i; }
-
   // TODO Have laws know themselves in order to eliminate .apply(self...
-  return valFun(fun).apply(self, args);
+  return valFun(fun).apply(null, args);
 }
 
 function prim_mkfun(b:Fan, a:Fan, n:Fan) : Fan {
@@ -712,7 +709,7 @@ export function optToFunction
 
   strs.push("}");
 
-  console.log(strs.join(''));
+  // console.log(strs.join(''));
   // console.log(constants);
 
   let builder = new Function("AP", "valNat", "TH", "$", "self", strs.join('')) as any;
@@ -928,7 +925,7 @@ function matchJetPin(body : Fan) : Fun | null
       }
 
       // TODO: Remove callFun in jet impls.
-      return callFun(this.x, this, [v, i]);
+      return callFun(this.x, [v, i]);
     }
   } else if (bodyName == "get") {
     return function get(this : FanFun, i : Fan, v : Fan ) {
@@ -938,7 +935,7 @@ function matchJetPin(body : Fan) : Fun | null
       }
 
       // TODO: Remove callFun in jet impls.
-      return callFun(this.x, this, [i, v]);
+      return callFun(this.x, [i, v]);
     }
   } else if (bodyName == "len") {
     return function drop(this : FanFun, a : Fan) {
@@ -947,7 +944,7 @@ function matchJetPin(body : Fan) : Fun | null
         return BigInt(a.length);
       }
 
-      return callFun(this.x, this, [a]);
+      return callFun(this.x, [a]);
     }
   } else if (bodyName == "weld") {
     return function weld(this : FanFun, b : Fan, a : Fan) {
@@ -957,7 +954,7 @@ function matchJetPin(body : Fan) : Fun | null
         return [...a, ...b];
       }
 
-      return callFun(this.x, this, [b, a]);
+      return callFun(this.x, [b, a]);
     }
   } else if (bodyName == "map") {
     return function map(this : FanFun, b : Fan, a : Fan) {
@@ -969,7 +966,7 @@ function matchJetPin(body : Fan) : Fun | null
         });
       }
 
-      return callFun(this.x, this, [b, a]);
+      return callFun(this.x, [b, a]);
     }
   // TODO: put
   } else if (bodyName == "take") {
@@ -980,7 +977,7 @@ function matchJetPin(body : Fan) : Fun | null
         return b.slice(0, Number(valNat(a)));
       }
 
-      return callFun(this.x, this, [b, a]);
+      return callFun(this.x, [b, a]);
     }
   } else if (bodyName == "drop") {
     return function drop(this : FanFun, b : Fan, a : Fan) {
@@ -990,7 +987,7 @@ function matchJetPin(body : Fan) : Fun | null
         return b.slice(Number(valNat(a)));
       }
 
-      return callFun(this.x, this, [b, a]);
+      return callFun(this.x, [b, a]);
     }
   } else if (bodyName == "cat") {
     return function drop(this : FanFun, a : Fan) {
@@ -1017,7 +1014,7 @@ function matchJetPin(body : Fan) : Fun | null
         }
       }
 
-      return callFun(this.x, this, [a]);
+      return callFun(this.x, [a]);
     }
   } else if (bodyName == "cordFromRow") {
     // TODO: As mentioned in the haskell implementation, you probably don't
@@ -1033,7 +1030,7 @@ function matchJetPin(body : Fan) : Fun | null
             nats.push(x);
           } else {
             // Fallback.
-            return callFun(this.x, this, [a]);
+            return callFun(this.x, [a]);
           }
         }
 
@@ -1049,7 +1046,7 @@ function matchJetPin(body : Fan) : Fun | null
         console.log("str:", str);
         return b;
       }
-      return callFun(this.x, this, [a]);
+      return callFun(this.x, [a]);
     }
   }
 
