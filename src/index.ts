@@ -613,26 +613,27 @@ function runToFunctionText(strs : string[],
     // { t: OptKind.EXE, x: Fun, f: Fan, rs: Opt[] }
     case OptKind.EXE: {
       if (pos == Position.INNER) {
-        strs.push("TH(function(){");
-        runToFunctionText(strs, Position.STMT, constants, opt);
-        strs.push("})");
+        strs.push("TH(() => ");
+        let x_idx = pushConst(opt.x);
+        strs.push("(");
+        for (let i=(opt.rs.length-1); i>-1; i--) {
+          let r = opt.rs[i];
+          runToFunctionText(strs, Position.INNER, constants, r);
+          if (i>0) strs.push(", ");
+        }
+        strs.push("))");
         return;
       }
 
-      // TODO If the code for law knows itself (includes itself in
-      // constants array).  Then we can replace foo.apply(bar,[x,y,z])
-      // with `foo(x,y,z)` which is likely faster.
       strs.push("return ");
       let x_idx = pushConst(opt.x);
-      strs.push(".apply(");
-      let f_idx = pushConst(opt.f)
-      strs.push(", [");
+      strs.push("(");
       for (let i=(opt.rs.length-1); i>-1; i--) {
         let r = opt.rs[i];
         runToFunctionText(strs, Position.INNER, constants, r);
         if (i>0) strs.push(", ");
       }
-      strs.push("]);");
+      strs.push(");");
       return;
     }
 
