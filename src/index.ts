@@ -464,7 +464,7 @@ export type Opt =
   | { t: OptKind.REF, r: string }
   | { t: OptKind.KAL, f: Opt[] }
   | { t: OptKind.IF, raw:Opt, i:Opt, th:Opt, el:Opt }
-  | { t: OptKind.EXE, x: Fun, f: Fan, rs: Opt[] }
+  | { t: OptKind.EXE, x: Fun, rs: Opt[] }
 
 // Collect all let statements in a function and hoist them to the top.
 export type TopOptLet = [string, Opt];
@@ -536,20 +536,10 @@ function optimize(r : Run) : Opt {
         }
       }
 
-      // return { t: OptKind.KAL, f:call }
-
       let args : Opt[] = [];
       for (let i=1; i<call.length; i++) { args.push(call[i]); }
-      // console.log("EXE", valFun(headFan), args)
-      // console.log(valFun(headFan));
 
-      // TODO Eliminate `f` and have laws know themselves instead.
-      let funSelf : Fan = headFan;
-      while (isPin(funSelf)) {
-        funSelf = funSelf.i;
-      }
-
-      return { t: OptKind.EXE, x:valFun(headFan), f:funSelf, rs:args }
+      return { t: OptKind.EXE, x:valFun(headFan), rs:args }
   }
 }
 
