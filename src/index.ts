@@ -454,6 +454,7 @@ export enum OptKind {
   KAL,
   EXE,
   IF,
+  RECUR,
 }
 
 // Intermediate form for the compiler.
@@ -465,15 +466,16 @@ export type Opt =
   | { t: OptKind.KAL, f: Opt[] }
   | { t: OptKind.IF, raw:Opt, i:Opt, th:Opt, el:Opt }
   | { t: OptKind.EXE, x: Fun, rs: Opt[] }
+  | { t: OptKind.RECUR, rs: Opt[] }
 
 // Collect all let statements in a function and hoist them to the top.
 export type TopOptLet = [string, Opt];
 
 // Takes the raw Run
-function optimize(r : Run) : Opt {
+function optimize(arity : bigint, r : Run) : Opt {
   switch (r.t) {
     case RunKind.LOG:
-      return { t: OptKind.LOG, l: r.l, r: optimize(r.r) }
+      return { t: OptKind.LOG, l: r.l, r: optimize(arity, r.r) }
 
     case RunKind.CNS:
       return { t: OptKind.CNS, c: r.c };
@@ -482,15 +484,22 @@ function optimize(r : Run) : Opt {
       return { t: OptKind.REF, r: r.r };
 
     case RunKind.KAL:
-      let stack = [optimize(r.x)];
+      let stack = [optimize(arity, r.x)];
       let next = r.f;
       while (next.t == RunKind.KAL) {
-        stack.push(optimize(next.x));
+        stack.push(optimize(arity, next.x));
         next = next.f;
       }
-      stack.push(optimize(next));
+      stack.push(optimize(arity, next));
       let call = stack.reverse();
       let head = call[0];
+
+      let numArgs = BigInt(call.length - 1);
+
+      // TODO Support oversaturated recursion.
+      if (head.t == OptKind.REF && head.r == "self" && numArgs==arity) {
+        return { t: OptKind.RECUR, rs:call.slice(1) }
+      }
 
       if (head.t != OptKind.CNS) {
         return { t: OptKind.KAL, f:call }
@@ -500,7 +509,7 @@ function optimize(r : Run) : Opt {
 
       // TODO We can also handle cases where the arity is less than the
       // number of arguments by outputing an inner EXE and an outer KAL.
-      if (BigInt(call.length) != (1n + rawArity(headFan))) {
+      if (numArgs != rawArity(headFan)) {
         return { t: OptKind.KAL, f:call }
       }
 
@@ -545,11 +554,14 @@ function optimize(r : Run) : Opt {
 
 enum Position {
   INNER,
+  NEED,
   STMT
 }
 
 //
-function runToFunctionText(strs : string[],
+function runToFunctionText(name : string,
+                           args : string[],
+                           strs : string[],
                            pos : Position,
                            constants : Fan[],
                            opt : Opt) {
@@ -570,7 +582,7 @@ function runToFunctionText(strs : string[],
       strs.push("(function(){console.log(");
       strs.push(JSON.stringify(opt.l));
       strs.push(");\n");
-      runToFunctionText(strs, Position.INNER, constants, opt.r);
+      runToFunctionText(name, args, strs, Position.INNER, constants, opt.r);
       strs.push("})()");
       if (pos == Position.STMT) {
         strs.push(";\n");
@@ -597,30 +609,118 @@ function runToFunctionText(strs : string[],
       }
       return;
 
-    // { t: OptKind.EXE, x: Fun, f: Fan, rs: Opt[] }
-    case OptKind.EXE: {
+    case OptKind.RECUR: {
       if (pos == Position.INNER) {
+        // let foo = { t:OptKind.REF, r:"self" } as Opt;
+        // let fal = { t:OptKind.KAL, f:[foo].concat(opt.rs) } as Opt;
+        // runToFunctionText(name, args, strs, pos, constants, fal);
+        // return;
+
         strs.push("TH(() => ");
-        let x_idx = pushConst(opt.x);
+        strs.push(name);
         strs.push("(");
         for (let i=(opt.rs.length-1); i>-1; i--) {
           let r = opt.rs[i];
-          runToFunctionText(strs, Position.INNER, constants, r);
+          runToFunctionText(name, args, strs, Position.INNER, constants, r);
           if (i>0) strs.push(", ");
         }
         strs.push("))");
         return;
       }
 
+      if (pos == Position.NEED) {
+        // let foo = { t:OptKind.REF, r:"self" } as Opt;
+        // let fal = { t:OptKind.KAL, f:[foo].concat(opt.rs) } as Opt;
+        // runToFunctionText(name, args, strs, pos, constants, fal);
+        // return;
+
+        strs.push(name);
+        strs.push("(");
+        for (let i=(opt.rs.length-1); i>-1; i--) {
+          let r = opt.rs[i];
+          runToFunctionText(name, args, strs, Position.INNER, constants, r);
+          if (i>0) strs.push(", ");
+        }
+        strs.push(")");
+        return;
+      }
+
+
+      /*
+      strs.push("return TH(() => ");
+      strs.push(name);
+      strs.push("(");
+      for (let i=(opt.rs.length-1); i>-1; i--) {
+        let r = opt.rs[i];
+        runToFunctionText(name, args, strs, Position.INNER, constants, r);
+        if (i>0) strs.push(", ");
+      }
+      strs.push("));");
+      */
+
+      const len = opt.rs.length;
+      strs.push("\n");
+      for (let i=0; i<len; i++) {
+        strs.push("const ");
+        strs.push(args[len-(i+1)]);
+        strs.push("_new")
+        strs.push(" = ");
+        const r = opt.rs[i];
+        runToFunctionText(name, args, strs, Position.INNER, constants, r);
+        strs.push(";\n");
+      }
+      for (let i=0; i<len; i++) {
+        strs.push(args[len-(i+1)]);
+        strs.push(" = ");
+        strs.push(args[len-(i+1)]);
+        strs.push("_new;\n")
+      }
+      strs.push("continue;\n");
+      return;
+    }
+
+    // { t: OptKind.EXE, x: Fun, f: Fan, rs: Opt[] }
+    case OptKind.EXE: {
+      if (pos == Position.INNER) {
+        strs.push("TH(() => ");
+        pushConst(opt.x);
+        strs.push("(");
+        for (let i=(opt.rs.length-1); i>-1; i--) {
+          let r = opt.rs[i];
+          runToFunctionText(name, args, strs, Position.INNER, constants, r);
+          if (i>0) strs.push(", ");
+        }
+        strs.push("))");
+        return;
+      }
+
+      if (pos == Position.NEED) {
+        pushConst(opt.x);
+        strs.push("(");
+        for (let i=(opt.rs.length-1); i>-1; i--) {
+          let r = opt.rs[i];
+          runToFunctionText(name, args, strs, Position.INNER, constants, r);
+          if (i>0) strs.push(", ");
+        }
+        strs.push(")");
+        return;
+      }
+
+      /*
+        Removing the TH(() => ) wrapper is significantly faster, but
+        consumes more stack space.
+      */
       strs.push("return ");
+      // strs.push("return TH(() => ");
       let x_idx = pushConst(opt.x);
       strs.push("(");
       for (let i=(opt.rs.length-1); i>-1; i--) {
         let r = opt.rs[i];
-        runToFunctionText(strs, Position.INNER, constants, r);
+        runToFunctionText(name, args, strs, Position.INNER, constants, r);
         if (i>0) strs.push(", ");
       }
-      strs.push(");");
+      strs.push(");\n");
+      // strs.push("));\n");
       return;
     }
 
@@ -632,7 +732,7 @@ function runToFunctionText(strs : string[],
       let first = true;
       for (let xf of opt.f) {
         if (!first) strs.push(",");
-        runToFunctionText(strs, Position.INNER, constants, xf);
+        runToFunctionText(name, args, strs, Position.INNER, constants, xf);
         first = false;
       }
       strs.push(")");
@@ -643,15 +743,15 @@ function runToFunctionText(strs : string[],
     }
     case OptKind.IF: {
       if (pos == Position.STMT) {
-        strs.push("if (valNat(");
-        runToFunctionText(strs, Position.INNER, constants, opt.i);
-        strs.push(") != 0n) {\n");
-        runToFunctionText(strs, Position.STMT, constants, opt.th);
+        strs.push("if (valBool(");
+        runToFunctionText(name, args, strs, Position.NEED, constants, opt.i);
+        strs.push(")) {\n");
+        runToFunctionText(name, args, strs, Position.STMT, constants, opt.th);
         strs.push("} else {\n");
-        runToFunctionText(strs, Position.STMT, constants, opt.el);
+        runToFunctionText(name, args, strs, Position.STMT, constants, opt.el);
         strs.push("}\n");
       } else {
-        runToFunctionText(strs, Position.INNER, constants, opt.raw);
+        runToFunctionText(name, args, strs, Position.INNER, constants, opt.raw);
       }
       return;
     }
@@ -682,30 +782,33 @@ export function optToFunction
   // returns a named function which uses our apply() based calling
   // convention. We set the name if appropriate so it shows up in devtools.
   let strs : string[] = ["return function " + name + "("];
+      // TODO Is it possible for name to conflict with arguments?
   let args = []
   for (let i = 0; i < argc; ++i) {
     args.push(gensym());
   }
   strs.push(args.reverse().join());
   strs.push(") {\n");
+  strs.push("do {\n")
 
   for (let [letName, letVal] of lets) {
     strs.push("const " + letName + " = ");
-    runToFunctionText(strs, Position.INNER, constants, letVal);
+    runToFunctionText(name, args, strs, Position.INNER, constants, letVal);
     strs.push(";\n");
   }
 
-  runToFunctionText(strs, Position.STMT, constants, run);
+  runToFunctionText(name, args, strs, Position.STMT, constants, run);
 
+  strs.push("}while(0);\n");
   strs.push("}");
 
-  // console.log(strs.join(''));
+  console.log(strs.join(''));
   // console.log(constants);
 
-  let builder = new Function("AP", "valNat", "TH", "$", "self", strs.join('')) as any;
+  let builder = new Function("AP", "valBool", "TH", "$", "self", strs.join('')) as any;
   // TODO: Actually figuring out the type here is wack, and I bet you can't do
   // it without dependent types on `argc`?
-  return builder(AP, valNat, mkThunk, constants, self);
+  return builder(AP, valBool, mkThunk, constants, self);
 }
 
 let reservedWords = new Set<string>([
@@ -752,14 +855,15 @@ export function compile
     , fanBody : Fan
     )
 {
-  let argc = Number(args);
+  let argc = Number(args); // TODO Does this MAX_INT if overflow?
   let [toprunlet, runBody] = fanToRun(argc, fanBody);
 
-  let optBody = optimize(runBody);
+  let optBody = optimize(args, runBody);
+
   let topOptLet = toprunlet.map(
     function (a : TopRunLet) : TopOptLet {
       let [name, run] = a;
-      return [name, optimize(run)] });
+      return [name, optimize(args, run)] });
 
   let strName = buildName(name);
   return optToFunction(strName, argc, topOptLet, optBody, self);
@@ -1109,6 +1213,16 @@ function valNat(val : Fan) : Nat {
     return 0n;
   }
 }
+
+function valBool(val : Fan) : boolean {
+  val = whnf(val);
+  if (typeof(val) === "bigint") {
+    return (val != 0n);
+  } else {
+    return false;
+  }
+}
+
 
 // Local Variables:
 // typescript-indent-level: 2
