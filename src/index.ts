@@ -645,35 +645,25 @@ function runToFunctionText(name : string,
         return;
       }
 
-
-      /*
-      strs.push("return TH(() => ");
-      strs.push(name);
-      strs.push("(");
-      for (let i=(opt.rs.length-1); i>-1; i--) {
-        let r = opt.rs[i];
-        runToFunctionText(name, args, strs, Position.INNER, constants, r);
-        if (i>0) strs.push(", ");
-      }
-      strs.push("));");
-      */
+      // strs.push("return TH(() => ");
+      // strs.push(name);
+      // strs.push("(");
+      // for (let i=(opt.rs.length-1); i>-1; i--) {
+        // let r = opt.rs[i];
+        // runToFunctionText(name, args, strs, Position.INNER, constants, r);
+        // if (i>0) strs.push(", ");
+      // }
+      // strs.push("));");
+      // return
 
       const len = opt.rs.length;
       strs.push("\n");
       for (let i=0; i<len; i++) {
-        strs.push("const ");
         strs.push(args[len-(i+1)]);
-        strs.push("_new")
         strs.push(" = ");
         const r = opt.rs[i];
         runToFunctionText(name, args, strs, Position.INNER, constants, r);
         strs.push(";\n");
-      }
-      for (let i=0; i<len; i++) {
-        strs.push(args[len-(i+1)]);
-        strs.push(" = ");
-        strs.push(args[len-(i+1)]);
-        strs.push("_new;\n")
       }
       strs.push("continue;\n");
       return;
@@ -785,11 +775,21 @@ export function optToFunction
       // TODO Is it possible for name to conflict with arguments?
   let args = []
   for (let i = 0; i < argc; ++i) {
-    args.push(gensym());
+    args.push("_" + gensym());
   }
   strs.push(args.reverse().join());
   strs.push(") {\n");
-  strs.push("do {\n")
+  strs.push("while(1){\n")
+
+  let gensum = mkGensym();
+  for (let i = 0; i < argc; ++i) {
+    const arg = gensum();
+    strs.push("const ");
+    strs.push(arg);
+    strs.push(" = _");
+    strs.push(arg);
+    strs.push(";\n");
+  }
 
   for (let [letName, letVal] of lets) {
     strs.push("const " + letName + " = ");
@@ -799,10 +799,9 @@ export function optToFunction
 
   runToFunctionText(name, args, strs, Position.STMT, constants, run);
 
-  strs.push("}while(0);\n");
-  strs.push("}");
+  strs.push("}}");
 
-  console.log(strs.join(''));
+  // console.log(strs.join(''));
   // console.log(constants);
 
   let builder = new Function("AP", "valBool", "TH", "$", "self", strs.join('')) as any;
@@ -1216,11 +1215,7 @@ function valNat(val : Fan) : Nat {
 
 function valBool(val : Fan) : boolean {
   val = whnf(val);
-  if (typeof(val) === "bigint") {
-    return (val != 0n);
-  } else {
-    return false;
-  }
+  return (typeof(val) === "bigint" && val != 0n);
 }
 
 
